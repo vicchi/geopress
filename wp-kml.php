@@ -33,11 +33,11 @@ if (empty($wp)) {
 		//wp('feed=rss2');
 }
 
-header('Content-type: application/vnd.google-earth.kml+xml; charset=' . get_settings('blog_charset'), true);
+header('Content-type: application/vnd.google-earth.kml+xml; charset=' . get_option('blog_charset'), true);
 $more = 1;
 
 ?>
-<?php echo '<?xml version="1.0" encoding="'.get_settings('blog_charset').'"?'.'>'; ?>
+<?php echo '<?xml version="1.0" encoding="'.get_option('blog_charset').'"?'.'>'; ?>
 <!-- generator="wordpress/<?php bloginfo_rss('version') ?>/GeoPress" -->
 <kml xmlns="http://earth.google.com/kml/2.2" xmlns:atom="http://www.w3.org/2005/Atom">
 <Document>
@@ -83,7 +83,7 @@ $more = 1;
         if ($coord[0] || $coord[1]) { ?>
     <Placemark id="<?php the_ID(); ?>">
         <name><?php the_title_rss() ?></name>
-<?php if (get_settings('rss_use_excerpt')) : ?>
+<?php if (get_option('rss_use_excerpt')) : ?>
         <Snippet><![CDATA[<?php the_excerpt_rss() ?>]]></Snippet>
 <?php else : ?>
         <Snippet><![CDATA[<?php the_excerpt_rss() ?>]]></Snippet>

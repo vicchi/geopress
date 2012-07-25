@@ -22,11 +22,11 @@ if (empty($wp)) {
     //wp('feed=rss2');
 }
 
-header('Content-type: application/vnd.google-earth.kml+xml; charset=' . get_settings('blog_charset'), true);
+header('Content-type: application/vnd.google-earth.kml+xml; charset=' . get_option('blog_charset'), true);
 $more = 1;
 
 ?>
-<?php echo '<?xml version="1.0" encoding="'.get_settings('blog_charset').'"?'.'>'; ?>
+<?php echo '<?xml version="1.0" encoding="'.get_option('blog_charset').'"?'.'>'; ?>
 <!-- generator="wordpress/<?php bloginfo_rss('version') ?>/KMLpress" -->
 <kml xmlns="http://earth.google.com/kml/2.0">
 <NetworkLink>

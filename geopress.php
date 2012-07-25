@@ -50,9 +50,13 @@ define('GEOPRESS_USER_AGENT',  'GeoPress2.0', false);
 define('GEOPRESS_LOCATION', 'geopress/', false);
 define('GEOPRESS_VERSION', '2.4.3', false);
 
-if ( !function_exists('Snoopy') ) { 
-  require_once(ABSPATH.WPINC.'/class-snoopy.php');
-  error_reporting(E_ERROR);
+//if ( !function_exists('Snoopy') ) { 
+//  require_once(ABSPATH.WPINC.'/class-snoopy.php');
+//  error_reporting(E_ERROR);
+//}
+
+if (!class_exists ('WP_Http')) {
+	include_once (ABSPATH . WPINC . '/class-http.php');
 }
 
 function geocode($location, $geocoder) {
@@ -139,8 +143,8 @@ function yahoo_mapurl($location) {
     $client->agent = GEOPRESS_USER_AGENT;
     $client->read_timeout = GEOPRESS_FETCH_TIMEOUT;
     $client->use_gzip = GEOPRESS_USE_GZIP;
-    $mapwidth = get_settings('_geopress_mapwidth', true);
-    $mapheight= get_settings('_geopress_mapheight', true);
+    $mapwidth = get_option('_geopress_mapwidth', true);
+    $mapheight= get_option('_geopress_mapheight', true);
     $url = yahoo_embedpngmapurl . "image_width=" . $mapwidth . "&image_height=" . $mapheight;
  	$url .= "&zoom=" . (yahoo_zoom( GeoPress::mapstraction_map_zoom())); // TODO: put in an appropriate conversion function
 	
@@ -420,7 +424,7 @@ function save_geo ($id, $name,$loc,$coord,$geom,$warn,$mapurl,$visible = 1,$map_
         $locations = $wpdb->get_results( $sql );
     }
 	
-	$geopress_marker = get_settings('_geopress_marker', true);
+	$geopress_marker = get_option('_geopress_marker', true);
     $output .= "geopress_addEvent(window,'load', function() { \n";
     foreach ($locations as $row) {
       if($row->coord != " ") {
@@ -648,17 +652,17 @@ function save_geo ($id, $name,$loc,$coord,$geom,$warn,$mapurl,$visible = 1,$map_
       echo '<div class="updated"><p><strong>' . __('Map layout updated.', 'GeoPress') . '</strong></p></div>';
     }
 
-    $map_format = get_settings('_geopress_map_format', true);
-    $default_mapwidth = get_settings('_geopress_mapwidth', true);
-    $default_mapheight = get_settings('_geopress_mapheight', true);
-    $default_marker = get_settings('_geopress_marker', $plugindir."/flag.png");
-    $default_zoom_level = get_settings('_geopress_default_zoom_level', true);
-    $map_view_type = get_settings('_geopress_map_type', true);
-    $map_controls_zoom = get_settings('_geopress_controls_zoom', true);
-    $map_controls_pan = get_settings('_geopress_controls_pan ', true) ? 'checked="checked"' : '';
-    $map_controls_overview = get_settings('_geopress_controls_overview', true) ? 'checked="checked"' : '';
-    $map_controls_scale = get_settings('_geopress_controls_scale', true) ? 'checked="checked"' : '';
-    $map_controls_map_type = get_settings('_geopress_controls_map_type', true) ? 'checked="checked"' : '';
+    $map_format = get_option('_geopress_map_format', true);
+    $default_mapwidth = get_option('_geopress_mapwidth', true);
+    $default_mapheight = get_option('_geopress_mapheight', true);
+    $default_marker = get_option('_geopress_marker', $plugindir."/flag.png");
+    $default_zoom_level = get_option('_geopress_default_zoom_level', true);
+    $map_view_type = get_option('_geopress_map_type', true);
+    $map_controls_zoom = get_option('_geopress_controls_zoom', true);
+    $map_controls_pan = get_option('_geopress_controls_pan ', true) ? 'checked="checked"' : '';
+    $map_controls_overview = get_option('_geopress_controls_overview', true) ? 'checked="checked"' : '';
+    $map_controls_scale = get_option('_geopress_controls_scale', true) ? 'checked="checked"' : '';
+    $map_controls_map_type = get_option('_geopress_controls_map_type', true) ? 'checked="checked"' : '';
 
 
 	echo '<div class="wrap"><h2>Configure Map Layout</h2>';
@@ -813,11 +817,11 @@ function save_geo ($id, $name,$loc,$coord,$geom,$warn,$mapurl,$visible = 1,$map_
 		echo '<div class="updated"><p><strong>' . __('Map options updated.', 'GeoPress') . '</strong></p></div>';
 	}
 
-    $default_rss_enable = get_settings('_geopress_rss_enable', true) ? 'checked="checked"' : '';
-    $default_add_map = get_settings('_geopress_default_add_map', true);
-    $rss_format = get_settings('_geopress_rss_format', true);
-    $google_apikey = get_settings('_geopress_google_apikey', true);
-    $yahoo_appid = get_settings('_geopress_yahoo_appid', true);
+    $default_rss_enable = get_option('_geopress_rss_enable', true) ? 'checked="checked"' : '';
+    $default_add_map = get_option('_geopress_default_add_map', true);
+    $rss_format = get_option('_geopress_rss_format', true);
+    $google_apikey = get_option('_geopress_google_apikey', true);
+    $yahoo_appid = get_option('_geopress_yahoo_appid', true);
 	?>
                         <div class="wrap">
                         <h2><?php _e('Customize GeoPress', 'GeoPress') ?></h2>
@@ -893,11 +897,12 @@ function save_geo ($id, $name,$loc,$coord,$geom,$warn,$mapurl,$visible = 1,$map_
 
 	// Adds administration menu options
 	function admin_menu() { 
-	    add_menu_page(__('Customize GeoPress', 'GeoPress'), __('GeoPress', 'GeoPress'), 5, GEOPRESS_LOCATION.basename(__FILE__), array('GeoPress', 'geopress_options_page'));
-	//      add_menu_page(__('GeoPress Locations', 'GeoPress'), __('GeoPress', 'GeoPress'), 5, GEOPRESS_LOCATION.basename(__FILE__), array('GeoPress', 'geopress_options_page'));
-	    add_submenu_page(GEOPRESS_LOCATION.basename(__FILE__),__('Locations', 'GeoPress'), __('Locations', 'GeoPress'), 5, 'geopress_locations', array('GeoPress', 'geopress_locations_page'));
-	    add_submenu_page(GEOPRESS_LOCATION.basename(__FILE__),__('Maps', 'GeoPress'), __('Maps', 'GeoPress'), 5, 'geopress_maps', array('GeoPress', 'geopress_maps_page'));
-	    add_submenu_page(GEOPRESS_LOCATION.basename(__FILE__),__('Documentation', 'GeoPress'), __('Documentation', 'GeoPress'), 5, 'geopress_documentation', array('GeoPress', 'geopress_documentation_page'));
+		$capability = 'publish_posts';
+	    add_menu_page(__('Customize GeoPress', 'GeoPress'), __('GeoPress', 'GeoPress'), $capability, GEOPRESS_LOCATION.basename(__FILE__), array('GeoPress', 'geopress_options_page'));
+	//      add_menu_page(__('GeoPress Locations', 'GeoPress'), __('GeoPress', 'GeoPress'), $capability, GEOPRESS_LOCATION.basename(__FILE__), array('GeoPress', 'geopress_options_page'));
+	    add_submenu_page(GEOPRESS_LOCATION.basename(__FILE__),__('Locations', 'GeoPress'), __('Locations', 'GeoPress'), $capability, 'geopress_locations', array('GeoPress', 'geopress_locations_page'));
+	    add_submenu_page(GEOPRESS_LOCATION.basename(__FILE__),__('Maps', 'GeoPress'), __('Maps', 'GeoPress'), $capability, 'geopress_maps', array('GeoPress', 'geopress_maps_page'));
+	    add_submenu_page(GEOPRESS_LOCATION.basename(__FILE__),__('Documentation', 'GeoPress'), __('Documentation', 'GeoPress'), $capability, 'geopress_documentation', array('GeoPress', 'geopress_documentation_page'));
 	}
 
 	function admin_head($unused) { 
@@ -970,7 +975,7 @@ function save_geo ($id, $name,$loc,$coord,$geom,$warn,$mapurl,$visible = 1,$map_
   
   // Replaces INSERT_MAP with a geopress map
   function embed_map_inpost($content) { 
-    $default_add_map = get_settings('_geopress_default_add_map', true);
+    $default_add_map = get_option('_geopress_default_add_map', true);
 
     // If the user explicitly wants to insert a map
     if(preg_match_all('/INSERT_MAP/', $content, $matches) > 0) {
@@ -1005,7 +1010,7 @@ function save_geo ($id, $name,$loc,$coord,$geom,$warn,$mapurl,$visible = 1,$map_
   /// Syndication Functions
   ///
   function atom_entry($post_ID) {
-    if(get_settings('_geopress_rss_enable', true))
+    if(get_option('_geopress_rss_enable', true))
     {
       $coord = the_coord();
       if($coord != "") {
@@ -1015,15 +1020,15 @@ function save_geo ($id, $name,$loc,$coord,$geom,$warn,$mapurl,$visible = 1,$map_
   }
 
   function rss2_item($post_ID) {
-		if(get_settings('_geopress_rss_enable', true))
+		if(get_option('_geopress_rss_enable', true))
 		{
 			the_coord_rss();
 		}
   }
   function geopress_namespace() {
-		if(get_settings('_geopress_rss_enable', true))
+		if(get_option('_geopress_rss_enable', true))
 		{
-			switch(get_settings('_geopress_rss_format', true)) {
+			switch(get_option('_geopress_rss_format', true)) {
 				case "w3c":
 					echo 'xmlns:geo="http://www.w3.org/2003/01/geo/wgs84_pos#"'."\n";
 					break;
@@ -1106,7 +1111,7 @@ function save_geo ($id, $name,$loc,$coord,$geom,$warn,$mapurl,$visible = 1,$map_
   // Returns the map format (google, yahoo, microsoft, osm, etc) set in the defaults, or passed by the optional parameter
   function mapstraction_map_format($map_format_type = "") {
 	if($map_format_type == "")
-	 	return get_settings('_geopress_map_format', true);
+	 	return get_option('_geopress_map_format', true);
 	else
 		return $map_format_type;
   }
@@ -1114,7 +1119,7 @@ function save_geo ($id, $name,$loc,$coord,$geom,$warn,$mapurl,$visible = 1,$map_
   // Returns the map type (road, satellite, hybrid) set in the defaults, or passed by the optional parameter
   function mapstraction_map_type($map_view_type = "") {
 		if($map_view_type == "")
-			$map_view_type = get_settings('_geopress_map_type', true);
+			$map_view_type = get_option('_geopress_map_type', true);
 
 		switch($map_view_type) {
 			case "hybrid":
@@ -1141,15 +1146,15 @@ function save_geo ($id, $name,$loc,$coord,$geom,$warn,$mapurl,$visible = 1,$map_
 */
   function mapstraction_map_controls($pan = "", $zoom = "", $overview = "", $scale = "", $map_type = "") {
 
-	if($pan == "") $map_controls_pan = get_settings('_geopress_controls_pan', true)  ? 'true' : 'false';
+	if($pan == "") $map_controls_pan = get_option('_geopress_controls_pan', true)  ? 'true' : 'false';
 	else $map_controls_pan = $pan;
-	if($zoom == "") $map_controls_zoom = get_settings('_geopress_controls_zoom', true);
+	if($zoom == "") $map_controls_zoom = get_option('_geopress_controls_zoom', true);
 	else $map_controls_zoom = $zoom;
-	if($overview == "") $map_controls_overview = get_settings('_geopress_controls_overview', true)  ? 'true' : 'false';
+	if($overview == "") $map_controls_overview = get_option('_geopress_controls_overview', true)  ? 'true' : 'false';
 	else $map_controls_overview = $overview;
-	if($scale == "") $map_controls_scale = get_settings('_geopress_controls_scale', true)  ? 'true' : 'false';
+	if($scale == "") $map_controls_scale = get_option('_geopress_controls_scale', true)  ? 'true' : 'false';
 	else $map_controls_scale = $scale;
-	if($map_type == "") $map_controls_map_type = get_settings('_geopress_controls_map_type', true)  ? 'true' : 'false';
+	if($map_type == "") $map_controls_map_type = get_option('_geopress_controls_map_type', true)  ? 'true' : 'false';
 	else $map_controls_map_type = $map_type;
 
 	$controls = "{\n";
@@ -1165,7 +1170,7 @@ function save_geo ($id, $name,$loc,$coord,$geom,$warn,$mapurl,$visible = 1,$map_
   // Returns the map zoom level set in the defaults, or passed by the optional parameter
   function mapstraction_map_zoom($map_zoom = 0) {
 	if($map_zoom == 0)
-		return get_settings('_geopress_default_zoom_level', true);
+		return get_option('_geopress_default_zoom_level', true);
 	else
 		return $map_zoom;
   }
@@ -1215,12 +1220,12 @@ add_action('rss_item', array('GeoPress', 'rss2_item'));
 
 
 function geopress_header() {
-	$map_format = get_settings('_geopress_map_format', true);
+	$map_format = get_option('_geopress_map_format', true);
     $scripts = "<!-- Location provided by GeoPress v".GEOPRESS_VERSION." (http://georss.org/geopress) -->";
     $scripts .= "<meta name=\"plugin\" content=\"geopress\" />";
 //	if($map_format == "yahoo" )
 //	{
-		$yahoo_appid = get_settings('_geopress_yahoo_appid', true);
+		$yahoo_appid = get_option('_geopress_yahoo_appid', true);
 		if($yahoo_appid != "") {
 			$scripts .= "\n".'<script type="text/javascript" src="http://api.maps.yahoo.com/ajaxymap?v=3.4&amp;appid='. $yahoo_appid .'"></script>';
 		}
@@ -1230,7 +1235,7 @@ function geopress_header() {
 		$scripts .= "\n".' <script src="http://dev.virtualearth.net/mapcontrol/v3/mapcontrol.js"></script>';
 	}
 
-	$google_apikey = get_settings('_geopress_google_apikey', true);
+	$google_apikey = get_option('_geopress_google_apikey', true);
 	if($google_apikey != "") {
 		$scripts .= "\n".'<script type="text/javascript" src="http://maps.google.com/maps?file=api&amp;v=2&amp;key='. $google_apikey .'" ></script>';
 	}
@@ -1249,7 +1254,7 @@ function geopress_header() {
 function geopress_locations_list() {
   $locations = GeoPress::get_locations();
   foreach ($locations as $loc) {
-    echo '<li><a href="'.get_settings('home').'?location='.$loc->name.'">'.$loc->name.'</a></li>';
+    echo '<li><a href="'.get_option('home').'?location='.$loc->name.'">'.$loc->name.'</a></li>';
   }
   return;
 }
@@ -1289,11 +1294,11 @@ function geopress_page_map($height = "", $width = "", $controls = true) {
 	}
 	else
 	{
-		$map_format = get_settings('_geopress_map_format', true);
+		$map_format = get_option('_geopress_map_format', true);
 		if ($height == "" || $width == "" )
 		{
-			$width = get_settings('_geopress_mapwidth', true);
-			$height = get_settings('_geopress_mapheight', true)*2;
+			$width = get_option('_geopress_mapwidth', true);
+			$height = get_option('_geopress_mapheight', true)*2;
 		}
 
 		$map_id = $post->ID . $geopress_map_index;
@@ -1340,12 +1345,12 @@ function geopress_page_map($height = "", $width = "", $controls = true) {
 // $url is an option URL to a KML or GeoRSS file to include in the map
 function geopress_map($height = "", $width = "", $locations = -1, $unique_id, $loop_locations = false, $zoom_level = -1, $url = "") {
 	$plugindir = get_bloginfo('wpurl') . "/wp-content/plugins/geopress";		
-  $map_format = get_settings('_geopress_map_format', true);
-  $geopress_marker = get_settings('_geopress_marker', true);
+  $map_format = get_option('_geopress_map_format', true);
+  $geopress_marker = get_option('_geopress_marker', true);
   if ($height == "" || $width == "" )
   {
-   	$height = get_settings('_geopress_mapheight', true);
-   	$width = get_settings('_geopress_mapwidth', true);
+   	$height = get_option('_geopress_mapheight', true);
+   	$width = get_option('_geopress_mapwidth', true);
   }
   
   // sometimes we don't want to deal with a unique ID b/c we know there will 
@@ -1410,15 +1415,15 @@ function geopress_map($height = "", $width = "", $locations = -1, $unique_id, $l
 $geopress_map_index = 1;
 function geopress_post_map($height = "", $width = "", $controls = true, $overlay = "") {
     global $post, $geopress_map_index;
-	$geopress_marker = get_settings('_geopress_marker', true);
+	$geopress_marker = get_option('_geopress_marker', true);
 
     $geo = GeoPress::get_geo($post->ID);
     if($geo) {
         if(!is_feed()) {
 
             if ($height == "" || $width == "" ) {
-                $height = get_settings('_geopress_mapheight', true);
-                $width = get_settings('_geopress_mapwidth', true);
+                $height = get_option('_geopress_mapheight', true);
+                $width = get_option('_geopress_mapwidth', true);
             }
 
             $map_id = $post->ID . $geopress_map_index;
@@ -1446,8 +1451,8 @@ function geopress_post_map($height = "", $width = "", $controls = true, $overlay
 }
 
 function geopress_map_select($height=250, $width=400, $style="float: left;") {   
-  $map_format = get_settings('_geopress_map_format', true);
-  $map_view_type = get_settings('_geopress_map_type', true);
+  $map_format = get_option('_geopress_map_format', true);
+  $map_view_type = get_option('_geopress_map_type', true);
   $output = '<div id="geo_map" class="mapstraction" style="width: '.$width.'px; height: '.$height.'px;'.$style.'"></div>';
   $output .= '<!-- GeoPress Map --><script type="text/javascript">';
   $output .= " //<![CDATA[ \n";
@@ -1567,7 +1572,7 @@ return "$url";
 function the_coord_rss() {
   $coord = the_coord();
   $featurename = the_address();
-  $rss_format = get_settings('_geopress_rss_format', true);
+  $rss_format = get_option('_geopress_rss_format', true);
   if($coord != "") {
 	switch($rss_format) {
 	case "w3c":

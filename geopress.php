@@ -38,6 +38,9 @@ Author URI: http://brainoff.com
 	Allan () - by post zoom/maptype settings
 */
 
+define ('GEOPRESS_PATH', plugin_dir_path (__FILE__));
+define ('GEOPRESS_URL', plugin_dir_url (__FILE__));
+
 define('google_geocoder', 'http://maps.google.com/maps/geo?q=', true);
 define('google_regexp', "<coordinates>(.*),(.*),0</coordinates>", true);
 define('yahoo_regexp', "<Latitude>(.*)<\/Latitude>.*<Longitude>(.*)<\/Longitude>", true);
@@ -216,7 +219,7 @@ class GeoPress {
 	// default options
 	add_option('_geopress_mapwidth', "400");
 	add_option('_geopress_mapheight', "200");
-	add_option('_geopress_marker', $plugindir."/flag.png");
+	add_option('_geopress_marker', GEOPRESS_URL . "/flag.png");
 	add_option('_geopress_rss_enable', "true");
 	add_option('_geopress_rss_format', "simple");
 	add_option('_geopress_map_format', "openlayers");
@@ -431,7 +434,7 @@ function save_geo ($id, $name,$loc,$coord,$geom,$warn,$mapurl,$visible = 1,$map_
         $coords = preg_split('/\s+/',$row->coord);
         $output .= "\tvar myPoint = new LatLonPoint( $coords[0], $coords[1]);\n";
         $output .= "\tvar marker = new Marker(myPoint);\n";
-        $output .= "\tgeo_map$map_id.addMarkerWithData(marker,{ infoBubble: \"" . htmlentities($row->name) . "\", icon:\"$geopress_marker\", iconSize:[24,24], iconShadow:\"".$plugindir."/blank.gif\", iconShadowSize:[0,0] });\n";
+        $output .= "\tgeo_map$map_id.addMarkerWithData(marker,{ infoBubble: \"" . htmlentities($row->name) . "\", icon:\"$geopress_marker\", iconSize:[24,24], iconShadow:\"" . GEOPRESS_URL . "/blank.gif\", iconShadowSize:[0,0] });\n";
       }
     }
     $output .= "});\n</script>";
@@ -655,7 +658,7 @@ function save_geo ($id, $name,$loc,$coord,$geom,$warn,$mapurl,$visible = 1,$map_
     $map_format = get_option('_geopress_map_format', true);
     $default_mapwidth = get_option('_geopress_mapwidth', true);
     $default_mapheight = get_option('_geopress_mapheight', true);
-    $default_marker = get_option('_geopress_marker', $plugindir."/flag.png");
+    $default_marker = get_option('_geopress_marker', GEOPRESS_URL . "/flag.png");
     $default_zoom_level = get_option('_geopress_default_zoom_level', true);
     $map_view_type = get_option('_geopress_map_type', true);
     $map_controls_zoom = get_option('_geopress_controls_zoom', true);
@@ -1046,7 +1049,9 @@ function save_geo ($id, $name,$loc,$coord,$geom,$warn,$mapurl,$visible = 1,$map_
 
   // If the location is queried, JOIN with the postmeta table 
   function join_clause($join) {
-	if (((isset($_GET['location']) || $wp->query_vars['location'] != null)  && $_GET['location'] != "") OR ((isset($_GET['loc']) || $wp->query_vars['loc'] != null)  && $_GET['loc'] != "")) {
+	// if (((isset($_GET['location']) || $wp->query_vars['location'] != null)  && $_GET['location'] != "") OR ((isset($_GET['loc']) || $wp->query_vars['loc'] != null)  && $_GET['loc'] != "")) {
+	if ((isset ($_GET['location']) && !empty ($_GET['location'])) ||
+			(isset ($_GET['loc']) && !empty ($_GET['loc']))) {
 		global $wpdb, $id, $post, $posts;
 		global $table_prefix;
 		$geo_table_name = $table_prefix . "geopress";
@@ -1058,7 +1063,8 @@ function save_geo ($id, $name,$loc,$coord,$geom,$warn,$mapurl,$visible = 1,$map_
 
 	  // If the location is queried, add to the WHERE clause
 	  function where_clause($where) {
-		if ((isset($_GET['location']) || $wp->query_vars['location'] != null) && $_GET['location'] != "") {
+		//if ((isset($_GET['location']) || $wp_query->query_vars['location'] != null) && $_GET['location'] != "") {
+		if ((isset ($_GET['location']) && !empty ($_GET['location']))) {
 			global $wpdb, $id, $post, $posts;
 			global $table_prefix;
 			$geo_table_name = $table_prefix . "geopress";
@@ -1083,7 +1089,8 @@ function save_geo ($id, $name,$loc,$coord,$geom,$warn,$mapurl,$visible = 1,$map_
 	  // If the location is requested, and there exists a "location.php" template in 
 	  //  the theme, then use it
 	  function location_redirect() {
-		if ((isset($_GET['location']) || $wp->query_vars['location'] != null) && $_GET['location'] != "") {
+		//if ((isset($_GET['location']) || $wp_query->query_vars['location'] != null) && $_GET['location'] != "") {
+		if ((isset ($_GET['location']) && !empty ($_GET['location']))) {
 			global $posts;
 			// $location = $wp->query_vars['loc'];
 			$location = $_GET['location'];
@@ -1218,7 +1225,17 @@ add_action('rss_ns', array('GeoPress', 'geopress_namespace'));
 //add_action('rss_head', array('GeoPress', 'rss2_head'));
 add_action('rss_item', array('GeoPress', 'rss2_item'));
 
-
+//add_action ('deprecated_argument_run', 'deprecated_argument_run', 10, 3);
+function deprecated_argument_run ($function, $message, $version) {
+	error_log ('deprecated_argument_run++');
+	error_log ('func: ' . $function . ' msg: ' . $message . ' ver: ' . $version);
+	$trace = debug_backtrace ();
+	foreach ($trace as $frame) {
+		error_log (var_export ($frame, true));
+		error_log ($frame['file'] . ':' . $frame['line']);
+	}
+	error_log ('deprecated_argument_run--');
+}
 function geopress_header() {
 	$map_format = get_option('_geopress_map_format', true);
     $scripts = "<!-- Location provided by GeoPress v".GEOPRESS_VERSION." (http://georss.org/geopress) -->";
@@ -1241,9 +1258,9 @@ function geopress_header() {
 	}
 	$scripts .= "\n".'<script type="text/javascript" src="http://openlayers.org/api/OpenLayers.js"></script>';
 	
-	$plugindir = get_bloginfo('wpurl') . "/wp-content/plugins/geopress";
-	$scripts .= "\n".'<script type="text/javascript" src="'.$plugindir.'/mapstraction.js"></script>';
-	$scripts .= "\n".'<script type="text/javascript" src="'.$plugindir.'/geopress.js"></script>';
+	//$plugindir = site_url () . "/wp-content/plugins/geopress";
+	$scripts .= "\n".'<script type="text/javascript" src="'.GEOPRESS_URL.'/mapstraction.js"></script>';
+	$scripts .= "\n".'<script type="text/javascript" src="'.GEOPRESS_URL.'/geopress.js"></script>';
 	return $scripts;
 }
 
@@ -1344,7 +1361,7 @@ function geopress_page_map($height = "", $width = "", $controls = true) {
 // $zoom_level set the map zoom level for the overview. Default is to auto zoom to show all markers.
 // $url is an option URL to a KML or GeoRSS file to include in the map
 function geopress_map($height = "", $width = "", $locations = -1, $unique_id, $loop_locations = false, $zoom_level = -1, $url = "") {
-	$plugindir = get_bloginfo('wpurl') . "/wp-content/plugins/geopress";		
+	//$plugindir = site_url () . "/wp-content/plugins/geopress";		
   $map_format = get_option('_geopress_map_format', true);
   $geopress_marker = get_option('_geopress_marker', true);
   if ($height == "" || $width == "" )
@@ -1385,11 +1402,11 @@ function geopress_map($height = "", $width = "", $locations = -1, $unique_id, $l
     $coords = split(" ",$loc->coord);
     $output .= "i = markers.push(new Marker(new LatLonPoint($coords[0], $coords[1])));\n";
     $details = " @ <strong>". htmlentities($loc->name)."</strong><br/>";
-    $url = get_bloginfo('wpurl');
+    $url = site_url ();
     foreach($posts as $post) {
         $details .= "<a href='".$url.'/?p='.$post->post_id."' title='". htmlentities($post->post_title)."'>".htmlentities($post->post_title)."</a><br/>";
     }
-	$output .= "\tgeo_map$map_id.addMarkerWithData(markers[i-1],{ infoBubble: \"$details\", date : \"new Date($post->post_date)\", icon:\"$geopress_marker\", iconSize:[24,24], iconShadow:\"".$plugindir."/blank.gif\", iconShadowSize:[0,0] });\n";
+	$output .= "\tgeo_map$map_id.addMarkerWithData(markers[i-1],{ infoBubble: \"$details\", date : \"new Date($post->post_date)\", icon:\"$geopress_marker\", iconSize:[24,24], iconShadow:\"".GEOPRESS_URL."/blank.gif\", iconShadowSize:[0,0] });\n";
 
     // $output .= "geo_map$map_id.addMarker(markers[i-1]);\n";
     //	$output .= 'geo_bounds.extend(markers[i-1].point);'."\n";
@@ -1610,8 +1627,8 @@ function geopress_rand_id() {
 }
 
 function geopress_kml_link() {
-	$plugindir = get_bloginfo('wpurl') . "/wp-content/plugins/geopress";	
-	echo "<a href=\"$plugindir/wp-kml-link.php\" title=\"KML Link\">KML</a>";
+	//$plugindir = site_url () . "/wp-content/plugins/geopress";	
+	echo "<a href=\"GEOPRESS_PATH/wp-kml-link.php\" title=\"KML Link\">KML</a>";
 }
 
 ?>

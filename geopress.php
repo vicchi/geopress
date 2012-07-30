@@ -68,10 +68,18 @@ function geocode($location, $geocoder) {
   }
   
   if( !preg_match('/\[(.+),[ ]?(.+)\]/', $location, $matches) ) { 
-    $client = new Snoopy();
-    $client->agent = GEOPRESS_USER_AGENT;
-    $client->read_timeout = GEOPRESS_FETCH_TIMEOUT;
-    $client->use_gzip = GEOPRESS_USE_GZIP;
+	$args = array (
+		'user-agent' => GEOPRESS_USER_AGENT,
+		'timeout' => GEOPRESS_FETCH_TIMEOUT,
+		'compress' => true,
+		'decompress' => true
+	);
+
+    //$client = new Snoopy();
+    //$client->agent = GEOPRESS_USER_AGENT;
+    //$client->read_timeout = GEOPRESS_FETCH_TIMEOUT;
+    //$client->use_gzip = GEOPRESS_USE_GZIP;
+
     if($geocoder == 'google') {
       $url = google_geocode . urlencode($location);
       $regexp = google_regexp;
@@ -81,8 +89,11 @@ function geocode($location, $geocoder) {
       $regexp = yahoo_regexp;
     }
 
-    @$client->fetch($url);
-    $xml = $client->results;
+	$ret = wp_remote_get ($url, $args);
+	$xml = $ret->body;
+
+    //@$client->fetch($url);
+    //$xml = $client->results;
 
     $lat = "";
     $lon = "";
@@ -106,15 +117,26 @@ function geocode($location, $geocoder) {
 
 function yahoo_geocode($location) {
   if( !preg_match('/\[(.+),[ ]?(.+)\]/', $location, $matches) ) { 
+	$args = array (
+		'user-agent' => GEOPRESS_USER_AGENT,
+		'timeout' => GEOPRESS_FETCH_TIMEOUT,
+		'compress' => true,
+		'decompress' => true
+	);
 
-    $client = new Snoopy();
-    $client->agent = GEOPRESS_USER_AGENT;
-    $client->read_timeout = GEOPRESS_FETCH_TIMEOUT;
-    $client->use_gzip = GEOPRESS_USE_GZIP;
+    //$client = new Snoopy();
+    //$client->agent = GEOPRESS_USER_AGENT;
+    //$client->read_timeout = GEOPRESS_FETCH_TIMEOUT;
+    //$client->use_gzip = GEOPRESS_USE_GZIP;
+
     $url = yahoo_geocoder . urlencode($location);
 
-    @$client->fetch($url);
-    $xml = $client->results;
+    //@$client->fetch($url);
+    //$xml = $client->results;
+
+	$ret = wp_remote_get ($url, $args);
+	$xml = $ret->body;
+
 	$dom = domxml_open_file($xml); 
 
 
@@ -141,11 +163,17 @@ function yahoo_zoom($zoom) {
 	return ceil(12 / $zoom);
 }
 function yahoo_mapurl($location) { 
+	$args = array (
+		'user-agent' => GEOPRESS_USER_AGENT,
+		'timeout' => GEOPRESS_FETCH_TIMEOUT,
+		'compress' => true,
+		'decompress' => true
+	);
 
-    $client = new Snoopy();
-    $client->agent = GEOPRESS_USER_AGENT;
-    $client->read_timeout = GEOPRESS_FETCH_TIMEOUT;
-    $client->use_gzip = GEOPRESS_USE_GZIP;
+    //$client = new Snoopy();
+    //$client->agent = GEOPRESS_USER_AGENT;
+    //$client->read_timeout = GEOPRESS_FETCH_TIMEOUT;
+    //$client->use_gzip = GEOPRESS_USE_GZIP;
     $mapwidth = get_option('_geopress_mapwidth', true);
     $mapheight= get_option('_geopress_mapheight', true);
     $url = yahoo_embedpngmapurl . "image_width=" . $mapwidth . "&image_height=" . $mapheight;
@@ -158,8 +186,10 @@ function yahoo_mapurl($location) {
 		$url .= "&latitude=" . $matches[1] . "&longitude=" . $matches[2];
 	}
 
-    @$client->fetch($url);
-    $xml = $client->results;
+    //@$client->fetch($url);
+    //$xml = $client->results;
+	$ret = wp_remote_get ($url, $args);
+	$xml = $ret->body;
     
     $mapinfo = "";
     if (preg_match("/<Result xmlns:xsi=\"[^\"]*\"( warning=\"[^\"]*\")?>(.*)<\/Result>/", $xml, $mapinfo)) { 

@@ -201,7 +201,15 @@ function yahoo_mapurl($location) {
       
 }
 
-class GeoPress {  
+class GeoPress {
+	function __construct () {
+		add_action ('plugins_loaded', array ($this, 'plugins_loaded'));
+	}
+	
+	function plugins_loaded () {
+		register_activation_hook (__FILE__, array ($this, 'install'));
+	}
+	
   function install() {
   	global $table_prefix, $wpdb;
 
@@ -1216,7 +1224,7 @@ function save_geo ($id, $name,$loc,$coord,$geom,$warn,$mapurl,$visible = 1,$map_
 ///
 /// Wordpress Plugin Hooks
 ///
-add_action('activate_geopress/geopress.php', array('GeoPress', 'install'));
+//add_action('activate_geopress/geopress.php', array('GeoPress', 'install'));
 
 // Add form to post editing
 add_action('edit_form_advanced', array('GeoPress', 'location_edit_form')); 
@@ -1660,5 +1668,7 @@ function geopress_kml_link() {
 	//$plugindir = site_url () . "/wp-content/plugins/geopress";	
 	echo "<a href=\"GEOPRESS_PATH/wp-kml-link.php\" title=\"KML Link\">KML</a>";
 }
+
+$__geopress_instance = new GeoPress;
 
 ?>

@@ -1,0 +1,21 @@
+@charset "utf-8";
+
+.geopress-postbox-settings {
+	width: 60%;
+	padding: 0 0 0 0;
+}
+
+.geopress-postbox-settings ul {
+	list-style: square;
+	padding: 0 0 0 1em;
+}
+
+.geopress-postbox-sidebar {
+	width: 30%;
+	padding: 0 0 0 10px;
+}
+
+.geopress-postbox-sidebar ul {
+	list-style: square;
+	padding: 0 0 0 1em;
+}

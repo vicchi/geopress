@@ -20,28 +20,36 @@ require_once (GEOPRESS_PATH . '/wp-mxn-helper/wp-mxn-helper.php');
 
 if (!class_exists ('GeoPress')) {
 	class GeoPress extends WP_PluginBase {
+		private static $instance;
+		
 		private $mxn;
 		
 		static $tab_names;
 		static $feed_types;
 		static $zoom_levels;
 		static $view_types;
-		static $control_types;
+		static $control_size;
+		static $geocoders;
 		
 		const OPTIONS = 'geopress_settings';
 		const VERSION = '300';
 		const DISPLAY_VERSION = 'v3.0.0';
+		const META_NONCE = 'geopress-meta-nonce';
 
 		/**
 		 * Class constructor
 		 */
 		
-		function __construct () {
+		private function __construct () {
 			$this->mxn = new WP_MXNHelper;
+			$this->mxn->register_callback ('cloudmade', array ($this, 'cloudmade_auth_callback'));
+			$this->mxn->register_callback ('nokia', array ($this, 'nokia_auth_callback'));
+			$this->mxn->register_callback ('googlev3', array ($this, 'googlev3_auth_callback'));
 			
 			self::$tab_names = array (
 				'maps' => 'Maps',
 				'locations' => 'Locations',
+				'geocoding' => 'Geocoding',
 				'feeds' => 'Feeds',
 				'defaults' => 'Defaults',
 				'help' => 'Help',
@@ -81,16 +89,44 @@ if (!class_exists ('GeoPress')) {
 				'hybrid' => 'Hybrid'
 				);
 				
-			self::$control_types = array (
+			self::$control_size = array (
 				'false' => 'None',
 				'small' => 'Small',
 				'large' => 'Large'
 				);
 				
+			self::$geocoders = array (
+				'bing' => array (
+					'name' => 'Bing Maps v7.0',
+					'config' => 'microsoft7_key'
+					),
+				'cloudmade' => array (
+					'name' => 'CloudMade',
+					'config' => 'cloudmade_key'
+					),
+				'googlev3' => array (
+					'name' => 'Google Maps v3',
+					'config' => 'google_key'
+					),
+				'yahoo' => array (
+					'name' => 'Yahoo! Placefinder',
+					'config' => 'yahoo_key'
+					)
+				);
+				
 			register_activation_hook (__FILE__, array ($this, 'add_settings'));
 			$this->hook ('plugins_loaded');
 		}
-		
+
+		public static function get_instance () {
+			if (!isset (self::$instance)) {
+				$c = __CLASS__;
+				self::$instance = new $c ();
+			}
+
+			return self::$instance;
+		}
+
 		/**
 		 * "plugins_loaded" action hook; called after all active plugins and pluggable functions
 		 * are loaded.
@@ -100,7 +136,6 @@ if (!class_exists ('GeoPress')) {
 
 		function plugins_loaded () {
 			//register_activation_hook (__FILE__, array ($this, 'add_settings'));
-			
 			$this->hook ('init');
 			
 			if (is_admin ()) {
@@ -108,6 +143,8 @@ if (!class_exists ('GeoPress')) {
 				$this->hook ('admin_menu');
 				$this->hook ('admin_print_scripts');
 				$this->hook ('admin_print_styles');
+				$this->hook ('add_meta_boxes', 'admin_add_meta_boxes');
+				$this->hook ('save_post', 'admin_save_meta_boxes');
 			}
 		}
 
@@ -183,7 +220,14 @@ if (!class_exists ('GeoPress')) {
 						'controls_overview' => '',
 						'controls_scale' => 'on',
 						'default_add_map' => 0,
-						'default_zoom_level' => '11'
+						'default_zoom_level' => '11',
+						'nokia_app_id' => '',
+						'nokia_app_token' => '',
+						'google_key' => '',
+						'cloudmade_key' => '',
+						'microsoft7_key' => '',
+						'yahoo_key' => '',
+						'geocoder' => 'yahoo'
 					)
 				);
 				update_option (self::OPTIONS, $settings);
@@ -205,12 +249,135 @@ if (!class_exists ('GeoPress')) {
 			load_plugin_textdomain ('geopress', false, $lang_dir);
 		}
 
+		function cloudmade_auth_callback () {
+			$key = $this->get_option ('cloudmade_key');
+			if (isset ($key)) {
+				return array ('key' => $key);
+			}
+		}
+		
+		function nokia_auth_callback () {
+			$id = $this->get_option ('nokia_app_id');
+			$token = $this->get_option ('nokia_app_token');
+			if (isset ($id) && isset ($token)) {
+				return array ('app-id' => $id, 'app-token' => $token);
+			}
+		}
+
+		function googlev3_auth_callback () {
+			$key = $this->get_option ('google_key');
+			if (isset ($key)) {
+				$sensor = 'false';
+				return array ('key' => $key, 'sensor' => $sensor);
+			}
+		}
+		
+		/****************************************************************************
+ 	 	 * Map display functions ...
+ 	 	 */
+
+		// MIGRATION HINT
+		// v3.0+ - map_select
+		// v2.4.3 - geopress_map_select
+
+		function map_select ($height=250, $width=400) {
+			$format = $this->get_option ('map_format');
+			$type = $this->get_option ('map_type');
+			$content = array ();
+			
+			$content[] = '<div id="geopress_map" class="mapstraction" style="width:' . $width . 'px; height:' . $height .'px; float: left"></div>';
+			$content[] = '<!-- Map by GeoPress ' . self::DISPLAY_VERSION . ' -->';
+			$content[] = '<script type="text/javascript">';
+			$content[] = '//<![CDATA[';
+			$content[] = '(function ($) {';
+			$content[] = '$(window).load (function(){';
+			$content[] = '});';
+			$content[] = '})(jQuery);';
+			$content[] = '// ]]>';
+			$content[] = '</script>';
+			$content[] = '<!-- End of map by GeoPress ' . self::DISPLAY_VERSION . ' -->';
+
+			return implode (PHP_EOL, $content);
+		}
+		
+		// MIGRATION HINT
+		// v3.0+ - map_saved_locations
+		// v2.4.3 - map_saved_locations
+
+		function map_saved_locations ($locations) {
+			if (!isset ($locations) && empty ($locations)) {
+				$locations = $this->get_saved_locations ();
+			}
+		}
+	
+		/****************************************************************************
+ 	 	 * GeoPress locations functions  ...
+ 	 	 */
+
+		function get_saved_locations () {
+			global $wpdb;
+
+			$table = $wpdb->prefix . GEOPRESS_TABLE_NAME;
+			$sql = "SELECT * FROM $table;";
+			$res = $wpdb->get_results ($sql);
+			
+			return $res;
+		}
+
+		// MIGRATION HINT
+		// v3.0+ - get_location_by_post_id
+		// v2.4.3 - get_geo
+
+		function get_location_by_post_id ($post_id) {
+			global $wpdb;
+			
+			$table = $wpdb->prefix . GEOPRESS_TABLE_NAME;
+			$id = get_post_meta ($post_id, 'geopress_id', true);
+			if ($id) {
+				$sql = array ();
+
+			    $sql[] = "SELECT * FROM $table, $wpdb->postmeta";
+			    $sql[] = " INNER JOIN $wpdb->posts ON $wpdb->posts.id = $wpdb->postmeta.post_id";
+			    $sql[] = " WHERE $wpdb->postmeta.meta_key = 'geopress_id'";
+			    $sql[] = " AND $wpdb->postmeta.meta_value = $geopress_table.geopress_id";
+			    $sql[] = " AND $wpdb->postmeta.post_id = $id AND $table.geopress_id = $id;";
+
+			    $res = $wpdb->get_results (implode ('', $sql));
+			    return $res[0];
+			}
+		}
+
+		// MIGRATION HINT
+		// v3.0+ - get_location_by_id
+		// v2.4.3 - get_location
+		
+		function get_location_by_id ($id) {
+		  	if ($id) {
+		    	global $wpdb;
+
+				$table = $wpdb->prefix . GEOPRESS_TABLE_NAME;
+		    	$sql = "SELECT * FROM $table WHERE geopress_id = $id";
+		    	$res = $wpdb->get_row ($sql);
+		    	return $res;
+			}
+		}
+
+		/****************************************************************************
+ 	 	 * Admin functions ...
+ 	 	 */
+
 		/**
 		 * "admin_init" action hook; called after the admin panel is initialised.
 		 */
 
 		function admin_init () {
 			$this->admin_upgrade ();
+			$current_providers = $this->mxn->get_supported_providers ();
+			$providers = array ();
+			foreach ($current_providers as $provider => $chars) {
+				$providers[] = $provider;
+			}
+			$this->mxn->set_admin_providers ($providers);
 		}
 
 		/**
@@ -231,6 +398,21 @@ if (!class_exists ('GeoPress')) {
 				}
 				$settings[$key] = $optval;
 				delete_option ($optname);
+			}
+		}
+
+		/**
+		 * Checks for the presence of a settings/options key and if not present, adds the
+		 * key and its associated value.
+		 *
+		 * @param array settings Array containing the current set of settings/options
+		 * @param string key Settings/options key
+		 * @param stirng key Settings/options value for key
+		 */
+
+		function admin_upgrade_option (&$options, $key, $value) {
+			if (!isset ($options[$key])) {
+				$options[$key] = $value;
 			}
 		}
 
@@ -326,6 +508,10 @@ if (!class_exists ('GeoPress')) {
 				 *		controls_scale = 'on'
 				 *		default_add_map = 0
 				 *		default_zoom_level = '11'
+				 *		nokia_app_id = ''
+				 *		nokia_app_token = ''
+				 *		google_key = ''
+				 *		cloudmade_key = ''
 				 * v3.0.0 removed configuration settings ...
 				 *		_geopress_mapwidth (replaced by map_width)
 				 *		_geopress_mapheight (replaced by map_height)
@@ -359,8 +545,16 @@ if (!class_exists ('GeoPress')) {
 						$this->admin_migrate_option ($settings, 'controls_scale', 'controls_scale');
 						$this->admin_migrate_option ($settings, 'default_add_map', 'default_add_map');
 						$this->admin_migrate_option ($settings, 'default_zoom_level', 'default_zoom_level');
+						$this->admin_migrate_option ($settings, 'google_apikey', 'google_key');
+						$this->admin_migrate_option ($settings, 'yahoo_appid', 'yahoo_key');
 						
 					case '300':
+						$this->admin_upgrade_option ($settings, 'nokia_app_id', '');
+						$this->admin_upgrade_option ($settings, 'nokia_app_token', '');
+						$this->admin_upgrade_option ($settings, 'cloudmade_key', '');
+						$this->admin_upgrade_option ($settings, 'microsoft7_key', '');
+						$this->admin_upgrade_option ($settings, 'geocoder', 'yahoo');
+
 						$settings['version'] = self::VERSION;
 						$upgrade_settings = true;
 						$upgrade_database = true;
@@ -453,7 +647,7 @@ if (!class_exists ('GeoPress')) {
 					strstr ($_GET['page'], "geopress")) {
 				wp_enqueue_script ('postbox');
 				wp_enqueue_script ('dashboard');
-				//wp_enqueue_script ('geopress-admin-script', GEOPRESS_URL . 'js/geopress-admin.js');
+				wp_enqueue_script ('geopress-admin-script', GEOPRESS_URL . 'js/geopress-admin.js');
 				//wp_enqueue_script ('geopress-admin-script', GEOPRESS_URL . 'js/geopress-admin.min.js');
 			}
 		}
@@ -497,9 +691,23 @@ if (!class_exists ('GeoPress')) {
 
 		function admin_display_settings () {
 			$settings = $this->admin_save_settings ();
-			$feed_settings = array ();
 			$locn_settings = array ();
+			$feed_settings = array ();
+			$geo_settings = array ();
+			$microsoft7_geo = array ();
+			$cloudmade_geo = array ();
+			$googlev3_geo = array ();
+			$yahoo_geo = array ();
 			$maps_settings = array ();
+			$nokia_maps = array ();
+			$googlev3_maps = array ();
+			$cloudmade_maps = array ();
+			$leaflet_maps = array ();
+			$openlayers_maps = array ();
+			$openmq_maps = array ();
+			$microsoft7_maps = array ();
+			$openspace_maps = array ();
+			
 			$defaults_settings = array ();
 			$help_settings = array ();
 			$colophon_settings = array ();
@@ -509,6 +717,72 @@ if (!class_exists ('GeoPress')) {
 			
 			switch ($tab) {
 				case 'locations':
+					$locn_settings[] = '<table class="widefat">';
+					$locn_settings[] = '<thead>';
+					$locn_settings[] = '<tr>';
+					$locn_settings[] = '<th>' . __('Show', 'geopress') . '</th>';
+					$locn_settings[] = '<th>' . __('Name', 'geopress') . '</th>';
+					$locn_settings[] = '<th>' . __('Address', 'geopress') . '</th>';
+					$locn_settings[] = '<th>' . __('Geometry', 'geopress') . '</th>';
+					$locn_settings[] = '</tr>';
+					$locn_settings[] = '</thead>';
+					$locn_settings[] = '<tfoot>';
+					$locn_settings[] = '<tr>';
+					$locn_settings[] = '<th>' . __('Show', 'geopress') . '</th>';
+					$locn_settings[] = '<th>' . __('Name', 'geopress') . '</th>';
+					$locn_settings[] = '<th>' . __('Address', 'geopress') . '</th>';
+					$locn_settings[] = '<th>' . __('Geometry', 'geopress') . '</th>';
+					$locn_settings[] = '</tr>';
+					$locn_settings[] = '</tfoot>';
+					$locn_settings[] = '<tbody>';
+					
+					$locations = $this->get_saved_locations ();
+					
+					$locn_settings[] = '</tbody>';
+					$locn_settings[] = '</table>';
+					
+					$this->map_saved_locations ($locations);
+					break;
+					
+				case 'geocoding':
+					$geo_settings[] = '<p><strong>' . __('Geocoders', 'geopress') . '</strong><br />
+					<select name="geopress-geocoder-type" id="geopress-geocoder-type">';
+					foreach (self::$geocoders as $id => $chars) {
+						$geo_settings[] = '<option value="' . $id . '"' . selected ($settings['geocoder'], $id, false) . '>' . $chars['name'] . '</option>';
+					}	// end-foreach
+					$geo_settings[] = '';
+					$geo_settings[] = '</select><br /><small>Select which geocoder GeoPress should use</small></p>';
+					
+					$cloudmade_geo[] = '<p><em>'
+						. __('You\'ve selected CloudMade\'s geocoder; to use this you\'ll need an API key; you can get one from the <a href="http://developers.cloudmade.com/projects" target="_blank">CloudMade Developer Zone</a>.', 'geopress')
+						. '</em></p>';
+					$cloudmade_geo[] = '<p><strong>' . __("CloudMade API Key", 'geopress') . '</strong><br />
+						<input type="text" name="geopress_cloudmade_key" id="geopress-cloudmade-key" size="40" value="'
+						. $settings["cloudmade_key"]
+						. '" /><br />
+						<small>' . __('Enter your CloudMade API key', 'geopress') . '</small></p>';
+
+					$googlev3_geo[] = '<p><em>'
+						. __('You\'ve selected Google\'s geocoder; that\'s all there is. No settings, no API key, no options.', 'geopress')
+						. '</em></p>';
+
+					$microsoft7_geo[] = '<p><em>'
+						. __('You\'ve selected Bing\'s geocoder; to use this you\'ll need an API key; you can get one from the <a href="http://www.bingmapsportal.com/" target="_blank">Bing Maps Account Center</a>.', 'geopress')
+						. '</em></p>';
+					$microsoft7_geo[] = '<p><strong>' . __("Bing API Key", 'geopress') . '</strong><br />
+						<input type="text" name="geopress_bing_key" id="geopress-binf-key" size="40" value="'
+						. $settings["microsoft7_key"]
+						. '" /><br />
+						<small>' . __('Enter your Bing API key', 'geopress') . '</small></p>';
+
+					$yahoo_geo[] = '<p><em>'
+						. __('You\'ve selected Yahoo\'s geocoder; to use this you\'ll need an API key; you can get one from the <a href="https://developer.apps.yahoo.com/dashboard/createKey.html" target="_blank">Yahoo! Developer Network</a>.', 'geopress')
+						. '</em></p>';
+					$yahoo_geo[] = '<p><strong>' . __("Yahoo API Key", 'geopress') . '</strong><br />
+						<input type="text" name="geopress_bing_key" id="geopress-binf-key" size="40" value="'
+						. $settings["microsoft7_key"]
+						. '" /><br />
+						<small>' . __('Enter your Bing API key', 'geopress') . '</small></p>';
 					break;
 					
 				case 'feeds':
@@ -640,8 +914,8 @@ if (!class_exists ('GeoPress')) {
 					$maps_settings[] = '</select><br /><small>' . __('Select which Maps provider you want to display your map with.', 'geopress') . '</small></p>';
 
 					$maps_settings[] = '<p><strong>' . __('Map Controls', 'geopress') . '</strong><br />
-						<select name="geopress_control_type" id="geopress-control-type">';
-						foreach (self::$control_types as $name => $descr) {
+						<select name="geopress_control_size" id="geopress-control-size">';
+						foreach (self::$control_size as $name => $descr) {
 							$maps_settings[] = '<option value="' . $name . '"' . selected ($settings['controls_zoom'], $name, false) . '>' . htmlspecialchars ($descr) . '</option>';
 						}	// end-foreach
 					$maps_settings[] = '</select><br /><small>' . __('Select which type of map controls you want displayed on your map.', 'geopress') . '</small></p>';
@@ -658,6 +932,55 @@ if (!class_exists ('GeoPress')) {
 					$maps_settings[] = '<p><strong>' . __('Map Scale Control', 'geopress') . '</strong><br />
 						<input type="checkbox" name="geopress_control_scale" id="geopress-control-scale" ' . checked ($settings['controls_scale'], 'on', false) . ' />
 						<small>' . __('Show map Scale control (not all map providers support this).', 'geopress'). '</small></p>';
+						
+					$nokia_maps[] = '<p>'
+						. sprintf (__('You\'ve selected Nokia Maps. To use Nokia Maps, you\'ll need API keys; you get get them from the <a href="%s" target="_blank">Nokia Developer site</a>.', 'geopress'), 'http://api.developer.nokia.com/')
+						. '</p>';
+					$nokia_maps[] = '<p><strong>' . __('App ID', 'geopress') . '</strong><br />
+						<input type="text" name="geopress_nokia_app_id" id="geopress-nokia-app-id" value="' . $settings['nokia_app_id'] . '" size="35" /><br />
+						<small>' . __('Enter your registered Nokia Location API App ID') . '</small></p>';
+					$nokia_maps[] = '<p><strong>' . __('Token / App Code', 'geopress') . '</strong><br />
+						<input type="text" name="geopress_nokia_app_token" id="geopress-nokia-app-token" value="' . $settings['nokia_app_token'] . '" size="35" /><br />
+						<small>' . __('Enter your registered Nokia Location API Token / App Code') . '</small></p>';
+					
+					$googlev3_maps[] = '<p><em>'
+						. __('You\'ve selected Google Maps. To use Google Maps, you\'ll need an API key; you can get one from the <a href="https://code.google.com/apis/console/" target="_blank">Google Code APIs Console</a>.', 'geopress')
+						. '</em></p>';
+					$googlev3_maps[] = '<p><strong>' . __("Google Maps API Key", 'geopress') . '</strong><br />
+						<input type="text" name="geopress_google_key" id="geopress-google-key" size="40" value="'
+						. $settings["google_key"]
+						. '" /><br />
+						<small>' . __('Enter your Google Maps API key', 'geopress') . '</small></p>';
+
+					$leaflet_maps[] = '<p><em>'
+						. __('You\'ve selected Leaflet Maps. That\'s all there is. No settings, no API key, no options.', 'geopress')
+						. '</em></p>';
+
+					$cloudmade_maps[] = '<p><em>'
+						. __('You\'ve selected CloudMade Maps. To use CloudMade Maps, you\'ll need an API key; you can get one from the <a href="http://developers.cloudmade.com/projects" target="_blank">CloudMade Developer Zone</a>.', 'geopress')
+						. '</em></p>';
+					$cloudmade_maps[] = '<p><strong>' . __("CloudMade API Key", 'geopress') . '</strong><br />
+						<input type="text" name="geopress_cloudmade_key" id="geopress-cloudmade-key" size="40" value="'
+						. $settings["cloudmade_key"]
+						. '" /><br />
+						<small>' . __('Enter your CloudMade API key', 'geopress') . '</small></p>';
+
+					$openlayers_maps[] = '<p><em>'
+						. __('You\'ve selected OpenLayers Maps. That\'s all there is. No settings, no API key, no options.', 'geopress')
+						. '</em></p>';
+
+					$openmq_maps[] = '<p><em>'
+						. __('You\'ve selected MapQuest Open Maps. That\'s all there is. No settings, no API key, no options.', 'geopress')
+						. '</em></p>';
+
+					$microsoft7_maps[] = '<p><em>'
+						. __('You\'ve selected Bing Maps. That\'s all there is. No settings, no API key, no options.', 'geopress')
+						. '</em></p>';
+
+					$openspace_maps[] = '<p><em>'
+						. __('You\'ve selected OS OpenSpace Maps. That\'s all there is. No settings, no API key, no options.', 'geopress')
+						. '</em></p>';
+
 					break;
 			}	// end-switch ($tab)
 			
@@ -675,6 +998,12 @@ if (!class_exists ('GeoPress')) {
 					$wrapped_content[] = $this->admin_postbox ('geopress-locations-settings',
 						__('Locations Settings', 'geopress'),
 						implode ('', $locn_settings));
+					break;
+
+				case 'geocoding':
+					$wrapped_content[] = $this->admin_postbox ('geopress-geocoding-settings',
+						__('Geocoding Settings', 'geopress'),
+						implode ('', $geo_settings));
 					break;
 
 				case 'feeds':
@@ -706,6 +1035,17 @@ if (!class_exists ('GeoPress')) {
 					$wrapped_content[] = $this->admin_postbox ('geopress-maps-settings',
 						__('Maps Settings', 'geopress'),
 						implode ('', $maps_settings));
+
+					$providers = $this->mxn->get_supported_providers ();
+					$current_provider = $settings['map_format'];
+					foreach ($providers as $provider => $chars) {
+						$id = 'geopress-' . $provider . '-settings';
+						$title = $chars['description'] . ' Settings';
+						$hidden = ($current_provider != $provider);
+						$block = $provider . '_maps';
+						$wrapped_content[] = $this->admin_postbox ($id, $title, implode ('', $$block), $hidden);
+					}	// end-foreach
+
 					break;
 			}	// end-switch ($tab)
 			
@@ -767,7 +1107,20 @@ if (!class_exists ('GeoPress')) {
 							
 						case 'maps':
 						default:
-							$update_options = false;
+							$settings['map_width'] = $this->admin_option ('geopress_map_width');
+							$settings['map_height'] = $this->admin_option ('geopress_map_height');
+							$settings['default_zoom_level'] = $this->admin_option ('geopress_zoom_level');
+							$settings['map_type'] = $this->admin_option ('geopress_view_type');
+							$settings['map_format'] = $this->admin_option ('geopress_map_format');
+							$settings['controls_zoom'] = $this->admin_option ('geopress_control_size');
+							$settings['controls_pan'] = $this->admin_option ('geopress_control_pan');
+							$settings['controls_type'] = $this->admin_option ('geopress_control_type');
+							$settings['controls_overview'] = $this->admin_option ('geopress_control_overview');
+							$settings['controls_scale'] = $this->admin_option ('geopress_control_scale');
+							$settings['nokia_app_id'] = html_entity_decode ($this->admin_option ('geopress_nokia_app_id'));
+							$settings['nokia_app_token'] = html_entity_decode ($this->admin_option ('geopress_nokia_app_token'));
+							$settings['google_key'] = html_entity_decode ($this->admin_option ('geopress_google_key'));
+							$settings['cloudmade_key'] = html_entity_decode ($this->admin_option ('geopress_cloudmade_key'));
 							break;
 					}	// end-switch
 					
@@ -798,11 +1151,15 @@ if (!class_exists ('GeoPress')) {
 		 * @return string Wrapped postbox content.
 		 */
 
-		function admin_postbox ($id, $title, $content) {
+		function admin_postbox ($id, $title, $content, $hidden=false) {
 			$handle_title = __('Click to toggle', 'geopress');
 			$wrapper = array ();
 
-			$wrapper[] = '<div id="' . $id . '" class="postbox">';
+			$wrapper[] = '<div id="' . $id . '" class="postbox"';
+			if ($hidden) {
+				$wrapper[] = ' style="display:none;"';
+			}
+			$wrapper[] = '>';
 			$wrapper[] = '<div class="handlediv" title="'
 				. $handle_title
 				. '"><br /></div>';
@@ -968,6 +1325,7 @@ if (!class_exists ('GeoPress')) {
 
 			switch ($tab) {
 				case 'locations':
+				case 'geocoding':
 				case 'feeds':
 				case 'maps':
 				case 'defaults':
@@ -986,9 +1344,132 @@ if (!class_exists ('GeoPress')) {
 			}	// end-switch ($tab)
 		}
 
+		// MIGRATION HINTS
+		// v3.0+ - admin_add_meta_boxes, admin_display_meta_box
+		// v2.4.3 - location_edit_form, geopress_new_location_form
+		//
+		// v2.4.3 - update_post
+		// v3.0+ - admin_save_meta_boxes
+		
+		/**
+		 * "add_meta_boxes" action hook; adds the "Geopress Locations" meta box to the admin
+		 * edit screens for posts, custom post types and pages.
+		 */
+		
+		function admin_add_meta_boxes () {
+			error_log ('admin_add_meta_boxes++');
+			// Get all currently defined post types (post/custom post/page) ...
+			$pts = get_post_types (array (), 'objects');
+			
+			// Add a meta box for each post type ...
+			foreach ($pts as $pt) {
+				$id = sprintf ('geopress-%s-meta', $pt->name);
+				$title = sprintf (__('Geotag This %s', 'geopress'), $pt->labels->singular_name);
+				add_meta_box ($id, $title, array ($this, 'admin_display_meta_box'), $pt->name);
+			}	// end-foreach
+		}
+		
+		/**
+		 * add_meta_box() callback; displays the "Geopress Locations" meta box.
+		 */
+		
+		function admin_display_meta_box ($post) {
+			error_log ('admin_display_meta_box++');
+
+			$locations = $this->get_location_by_post_id ($post->ID);
+
+			$content = array ();
+			
+			$content[] = wp_nonce_field (basename (__FILE__), self::META_NONCE);
+			
+			$locn_settings[] = '<table class="widefat">';
+			$locn_settings[] = '<thead>';
+			$locn_settings[] = '<tr>';
+			$locn_settings[] = '<th>' . __('Show', 'geopress') . '</th>';
+			$locn_settings[] = '<th>' . __('Name', 'geopress') . '</th>';
+			$locn_settings[] = '<th>' . __('Address', 'geopress') . '</th>';
+			$locn_settings[] = '<th>' . __('Geometry', 'geopress') . '</th>';
+			$locn_settings[] = '</tr>';
+			$locn_settings[] = '</thead>';
+			$locn_settings[] = '<tfoot>';
+			$locn_settings[] = '<tr>';
+			$locn_settings[] = '<th>' . __('Show', 'geopress') . '</th>';
+			$locn_settings[] = '<th>' . __('Name', 'geopress') . '</th>';
+			$locn_settings[] = '<th>' . __('Address', 'geopress') . '</th>';
+			$locn_settings[] = '<th>' . __('Geometry', 'geopress') . '</th>';
+			$locn_settings[] = '</tr>';
+			$locn_settings[] = '</tfoot>';
+			$locn_settings[] = '<tbody>';
+			
+			$locations = $this->get_saved_locations ();
+			
+			$locn_settings[] = '</tbody>';
+			$locn_settings[] = '</table>';
+			
+
+			echo implode (PHP_EOL, $content);
+		}
+		
+		/**
+		 * "save_post" action hook; save the location information, if present, for the current
+		 * post, custom post type or page.
+		 */
+		
+		function admin_save_meta_boxes ($post_id, $post) {
+			error_log ('admin_save_meta_boxes++');
+			
+			// CODE HEALTH WARNING!
+			//
+			// The "save_post" hook is a bit of a misnomer and isn't particularly well named.
+			// It's not just called on the saving of a post, but during post creation, during
+			// post autosave, during the creation of a post revision, in fact during anything
+			// that changes the disposition of the post. Now repeat all of the above and apply
+			// it also to custom post types and to pages.
+			//
+			// Which is why there's a whole lot of checking and validation going on here before
+			// we even start to look at the custom meta box options ...
+			
+			// Bale out if this is an autosave of a post/custom post type/page ...
+			if (defined ('DOING_AUTOSAVE') && DOING_AUTOSAVE) {
+				return $post_id;
+			}
+			
+			// Bale out if we're saving a revision ...
+			$parent_id = wp_is_post_revision ($post_id);
+			if ($parent_id) {
+				return $post_id;
+			}
+			
+			// Bale out if the current user can't edit the current post/custom post/page ...
+			$post_type = get_post_type_object ($post->post_type);
+			if (!current_user_can ($post_type->cap->edit_post, $post_id)) {
+				return $post_id;
+			}
+			
+			// Bale out if the status of the post/custom post/page isn't one of draft,
+			// pending or published ...
+			switch ($post->post_status) {
+				case 'draft':
+				case 'pending':
+				case 'publish':
+					break;
+					
+				default:
+					return $post_id;
+			}
+			
+			// Bale out if there's no nonce defined or if the nonce didn't originate from
+			// the admin screen ...
+			if (!isset ($_POST[self::META_NONCE]) || !check_admin_referer (basename (__FILE__), self::META_NONCE)) {
+				return $post_id;
+			}
+			
+			// We're good to go ...
+		}
+		
 	} // end-class GeoPress
 	
-	$__geopress_instance = new GeoPress;
+	GeoPress::get_instance ();
 }
 
 ?>

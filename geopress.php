@@ -15,8 +15,8 @@ define ('GEOPRESS_URL', plugin_dir_url (__FILE__));
 define ('GEOPRESS_DEFAULT_MARKER', GEOPRESS_URL . 'images/flag.png');
 define ('GEOPRESS_TABLE_NAME', 'geopress');
 
-require_once (GEOPRESS_PATH . '/wp-plugin-base/wp-plugin-base.php');
-require_once (GEOPRESS_PATH . '/wp-mxn-helper/wp-mxn-helper.php');
+require_once (GEOPRESS_PATH . '/includes/wp-plugin-base/wp-plugin-base.php');
+require_once (GEOPRESS_PATH . '/includes/wp-mxn-helper/wp-mxn-helper.php');
 
 if (!class_exists ('GeoPress')) {
 	class GeoPress extends WP_PluginBase {

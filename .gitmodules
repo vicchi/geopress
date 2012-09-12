@@ -1,0 +1,6 @@
+[submodule "includes/wp-mxn-helper"]
+	path = includes/wp-mxn-helper
+	url = ssh://github.com/vicchi/wp-mxn-helper.git
+[submodule "includes/wp-plugin-base"]
+	path = includes/wp-plugin-base
+	url = ssh://github.com/vicchi/wp-plugin-base.git

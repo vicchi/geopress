@@ -18,6 +18,10 @@ define ('GEOPRESS_TABLE_NAME', 'geopress');
 require_once (GEOPRESS_PATH . '/includes/wp-plugin-base/wp-plugin-base.php');
 require_once (GEOPRESS_PATH . '/includes/wp-mxn-helper/wp-mxn-helper.php');
 
+if ($pagenow == 'admin-ajax.php') {
+	require_once (GEOPRESS_PATH . '/includes/geopress-geocoder.php');
+}
+
 if (!class_exists ('GeoPress')) {
 	class GeoPress extends WP_PluginBase {
 		private static $instance;
@@ -35,6 +39,8 @@ if (!class_exists ('GeoPress')) {
 		const VERSION = '300';
 		const DISPLAY_VERSION = 'v3.0.0';
 		const META_NONCE = 'geopress-meta-nonce';
+		const ID_META_KEY = '_geopress_id';
+		const DEFAULT_GEOMETRY = 'point';
 
 		/**
 		 * Class constructor
@@ -96,7 +102,7 @@ if (!class_exists ('GeoPress')) {
 				);
 				
 			self::$geocoders = array (
-				'bing' => array (
+				'microsoft7' => array (
 					'name' => 'Bing Maps v7.0',
 					'config' => 'microsoft7_key'
 					),
@@ -145,6 +151,8 @@ if (!class_exists ('GeoPress')) {
 				$this->hook ('admin_print_styles');
 				$this->hook ('add_meta_boxes', 'admin_add_meta_boxes');
 				$this->hook ('save_post', 'admin_save_meta_boxes');
+				
+				$this->hook ('wp_ajax_geopress-geocode', 'admin_ajax_geocode');
 			}
 		}
 
@@ -276,7 +284,7 @@ if (!class_exists ('GeoPress')) {
  	 	 * Map display functions ...
  	 	 */
 
-		// MIGRATION HINT
+		// REWRITE HINT
 		// v3.0+ - map_select
 		// v2.4.3 - geopress_map_select
 
@@ -300,68 +308,285 @@ if (!class_exists ('GeoPress')) {
 			return implode (PHP_EOL, $content);
 		}
 		
-		// MIGRATION HINT
+		// REWRITE HINT
 		// v3.0+ - map_saved_locations
 		// v2.4.3 - map_saved_locations
 
 		function map_saved_locations ($locations) {
 			if (!isset ($locations) && empty ($locations)) {
-				$locations = $this->get_saved_locations ();
+				$visible = false;
+				$locations = $this->get_all_geotags ($visible);
 			}
 		}
-	
-		/****************************************************************************
- 	 	 * GeoPress locations functions  ...
- 	 	 */
+		
+		// REWRITE HINT
+		// v2.4.3 function geopress_map is now superceded by dynamic_map.
 
-		function get_saved_locations () {
-			global $wpdb;
-
-			$table = $wpdb->prefix . GEOPRESS_TABLE_NAME;
-			$sql = "SELECT * FROM $table;";
-			$res = $wpdb->get_results ($sql);
+		/**
+		 * Creates a dynamic map.
+		 *
+		 * @param bool id Specifies whether a unique DIV id is to be generated
+		 * @param string height Height of the map's DIV in px
+		 * @param string width Width of the map's DIV in px
+		 * @param integer count Add the last 'count' locations to the map. The default is to put add all locations.
+		 * @param bool in_loop Specifies whether we're running in The Loop and the locations of all visible posts are to be added.
+		 * @param integer zoom Set the map's zoom level. The default is to use the zoom level configured in settings/options.
+		 */
+		
+		function dynamic_map ($id, $height='', $width='', $count=-1, $in_loop=false, $zoom=-1) {
+			$settings = $this->get_option ();
 			
-			return $res;
+			if ($id) {
+				$map_id = $this->get_map_id ();
+			}
+			else {
+				$map_id = '';
+			}
+
+			if ((!isset ($height) || empty ($height)) || (!isset ($width) || empty ($width))) {
+				$height = $settings['map_height'];
+				$width = $settings['map_width'];
+			}
+			
+			
+		}
+	
+		// REWRITE HINTS
+		// geopress_rand_id is now superceded by get_map_id
+		
+		function get_map_id () {
+			srand ((double) microtime () * 1000000);  
+			return rand (0, 1000); 
 		}
 
-		// MIGRATION HINT
-		// v3.0+ - get_location_by_post_id
-		// v2.4.3 - get_geo
+		/****************************************************************************
+ 	 	 * GeoPress database table/geotag functions  ...
+ 	 	 */
 
-		function get_location_by_post_id ($post_id) {
+		//****************************************************************************
+		// REWRITE HINT
+		// get_location_posts is now superceded by get_geotagged_posts
+		
+	  	function get_geotagged_posts ($number=-1) {
 			global $wpdb;
-			
 			$table = $wpdb->prefix . GEOPRESS_TABLE_NAME;
-			$id = get_post_meta ($post_id, 'geopress_id', true);
-			if ($id) {
+
+			$sql = "SELECT * FROM $table, $wpdb->postmeta";
+			$sql .= " INNER JOIN $wpdb->posts ON $wpdb->posts.id = $wpdb->postmeta.post_id";
+			$sql .= " WHERE $wpdb->postmeta.meta_key = 'self::ID_META_KEY'";
+			$sql .= " AND $wpdb->postmeta.meta_value = $geopress_table.geopress_id";
+			$sql .= " AND coord != ''";
+			if ($number >= 0) {
+				$sql .= " LIMIT " . $number;
+			}
+			$result = $wpdb->get_results ($sql);
+
+	    	//  Build a hash of Location => Posts @ location
+			$locations = array ();
+			foreach ($result as $loc) {
+				if ($locations[$loc->name] == null) {
+					$locations[$loc->name] = array ();
+				}
+				array_push ($locations[$loc->name], $loc);
+			}
+			return $locations;
+		}
+
+		//****************************************************************************
+		// REWRITE HINT
+		// get_locations is now superseded by get_geotags
+
+		function get_geotags ($count=-1) {
+			global $wpdb;
+			$table = $wpdb->prefix . GEOPRESS_TABLE_NAME;
+
+			$sql = array ();
+			
+			$sql[] = "SELECT * FROM $table";
+			$sql[] = " INNER JOIN $wpdb->postmeta ON $wpdb->postmeta.meta_key = 'self::ID_META_KEY'";
+			$sql[] = " AND $wpdb->postmeta.meta_value = $geopress_table.geopress_id";
+			$sql[] = " WHERE coord != '' GROUP BY 'name'";
+			if ($count >= 0) {
+				$sql[] = " LIMIT " . $count;
+			}
+			$result = $wpdb->get_results (implode ('', $sql));
+
+			return $result;
+		}
+
+		//****************************************************************************
+		// REWRITE HINT
+		// geo_loop_locations is now superseded by get_loop_geotags
+		
+		function get_loop_geotags ($count=-1) {
+			$geotags = array ();
+			$tags = 0;
+			
+			while (have_posts ()) : the_post ();
+				$geotag = $this->get_geotag_by_post_id (get_the_ID ());
+				if (isset ($geotag) && !empty ($geotag)) {
+					$geotags[] = $geotag;
+					if (++$tags == $count) {
+						break;
+					}
+				}
+			endwhile;
+			
+	    	//  Build a hash of Location => Posts @ location
+			$locations = array ();
+			foreach ($result as $loc) {
+				if ($locations[$loc->name] == null) {
+					$locations[$loc->name] = array ();
+				}
+				array_push ($locations[$loc->name], $loc);
+			}
+			return $locations;
+		}
+		
+		//****************************************************************************
+		// REWRITE HINT
+		// get_geo is now superseded by get_geotag_by_post_id
+
+		function get_geotag_by_post_id ($post_id) {
+			error_log ('get_geotag_by_post_id++');
+			error_log ('post_id: ' . $post_id);
+ 			global $wpdb;
+			$table = $wpdb->prefix . GEOPRESS_TABLE_NAME;
+
+			$geopress_id = get_post_meta ($post_id, self::ID_META_KEY, true);
+			error_log ('geopress_id: ' . $geopress_id);
+			if ($geopress_id) {
 				$sql = array ();
 
 			    $sql[] = "SELECT * FROM $table, $wpdb->postmeta";
 			    $sql[] = " INNER JOIN $wpdb->posts ON $wpdb->posts.id = $wpdb->postmeta.post_id";
-			    $sql[] = " WHERE $wpdb->postmeta.meta_key = 'geopress_id'";
-			    $sql[] = " AND $wpdb->postmeta.meta_value = $geopress_table.geopress_id";
-			    $sql[] = " AND $wpdb->postmeta.post_id = $id AND $table.geopress_id = $id;";
-
+			    $sql[] = " WHERE $wpdb->postmeta.meta_key = '" . self::ID_META_KEY . "'";
+			    $sql[] = " AND $wpdb->postmeta.meta_value = $table.geopress_id";
+			    $sql[] = " AND $wpdb->postmeta.post_id = $post_id AND $table.geopress_id = $geopress_id;";
+				error_log ('sql: ' . implode ('', $sql));
 			    $res = $wpdb->get_results (implode ('', $sql));
-			    return $res[0];
+				if ($res) {
+			    	return $res[0];
+				}
 			}
 		}
 
-		// MIGRATION HINT
-		// v3.0+ - get_location_by_id
-		// v2.4.3 - get_location
+		//****************************************************************************
+		// REWRITE HINT
+		// get_location is now superseded by get_geotag_by_geopress_id
 		
-		function get_location_by_id ($id) {
+		function get_geotag_by_geopress_id ($id) {
 		  	if ($id) {
 		    	global $wpdb;
-
 				$table = $wpdb->prefix . GEOPRESS_TABLE_NAME;
-		    	$sql = "SELECT * FROM $table WHERE geopress_id = $id";
+
+	    		$sql = "SELECT * FROM $table WHERE geopress_id = $id";
 		    	$res = $wpdb->get_row ($sql);
 		    	return $res;
 			}
 		}
 
+		//****************************************************************************
+		// REWRITE HINT
+		// select_saved_geo is now (partially) superceded by get_all_geotags
+		// see also: admin_display_meta_box
+
+		function get_all_geotags ($visible=true) {
+			global $wpdb;
+			$table = $wpdb->prefix . GEOPRESS_TABLE_NAME;
+			
+			$sql = "SELECT * FROM $table";
+			if ($visible) {
+				$sql .= " WHERE visible = 1";
+			}
+			$result = $wpdb->get_results ($sql);
+			
+			return $result;
+		}
+		
+		//****************************************************************************
+		// REWRITE HINT
+		// save_geo is now superceded by save_geotag
+
+		function save_geotag ($id, $name, $location, $coord, $geometry, $visible=true) {
+			error_log ('save_geotag++');
+			error_log ('id: ' . $id);
+			error_log ('name: ' . $name);
+			error_log ('location: ' . $location);
+			error_log ('coord: ' . $coord);
+			error_log ('geometry: ' . $geometry);
+			if (!isset ($name) || empty ($name)) {
+				$visible = false;
+			}
+			
+			global $wpdb;
+			$table = $wpdb->prefix . GEOPRESS_TABLE_NAME;
+			
+			if (isset ($id) && !empty ($id) && $id != -1) {
+				$sql = "SELECT * FROM $table WHERE geopress_id = $id";
+			}
+			
+			else {
+				$sql = "SELECT * FROM $table WHERE (name = '$name' AND coord = '$coord') OR loc = '$location'";
+			}
+			$row = $wpdb->get_row ($sql);
+			
+			if ($row) {
+				$geopress_id = $row->geopress_id;
+			    $sql = "UPDATE $table SET name = '$name', loc = '$location', coord = '$coord', geom = '$geometry', visible = '$visible' WHERE geopress_id = '$geopress_id'";
+			    $wpdb->query ($sql);
+			}
+			
+			else {
+			    $sql = "INSERT INTO $table VALUES (NULL,'$name','$location',NULL,NULL,'$coord','$geometry',NULL,NULL,NULL,NULL,NULL,'$visible',NULL,NULL,NULL)";
+			    $wpdb->query ($sql);
+			    $geopress_id = mysql_insert_id ();
+			}
+
+			return $geopress_id;
+		}
+
+		//****************************************************************************
+		// REWRITE HINT
+		// default_loc is now superceded by get_default_geotag
+
+		function get_default_geotag () {
+			global $wpdb;
+			$table = $wpdb->prefix . GEOPRESS_TABLE_NAME;
+			
+			$sql = "SELECT * FROM $table WHERE visible = 1";
+			$result = $wpdb->get_results ($sql);
+			foreach ($result as $row) {
+				return $row->loc;
+			}
+		}
+		
+		/****************************************************************************
+ 	 	 * Admin AJAX functions ...
+ 	 	 */
+
+		function admin_ajax_geocode () {
+			error_log ('admin_ajax_geocode++');
+			$query = $_POST['geocodeAddress'];
+			$geocoder = GeoPressGeocoder::get_instance ();
+			$provider = $this->get_option ('geocoder');
+			$chars = self::$geocoders[$provider];
+			$key = $this->get_option ($chars['config']);
+			error_log ('provider: ' . $provider);
+			error_log ('query: ' . $query);
+			error_log ('key: ' . $key);
+			error_log ('Invoking geocoder ...');
+			$ret = $geocoder->geocode ($provider, $query, $key);
+			error_log ('Status: ' . $ret['status']);
+			error_log ('HTTP Code: ' . $ret['http-code']);
+			error_log ('Service Code: ' . $ret['service-code']);
+			error_log ('Lat/Lon: ' . $ret['lat'] . ',' . $ret['lon']);
+			$resp = json_encode ($ret);
+			header ('Content-Type: application/json');
+			echo $resp;
+			exit;
+		}
+		
 		/****************************************************************************
  	 	 * Admin functions ...
  	 	 */
@@ -650,6 +875,12 @@ if (!class_exists ('GeoPress')) {
 				wp_enqueue_script ('geopress-admin-script', GEOPRESS_URL . 'js/geopress-admin.js');
 				//wp_enqueue_script ('geopress-admin-script', GEOPRESS_URL . 'js/geopress-admin.min.js');
 			}
+			
+			elseif ($pagenow == 'post.php' || $pagenow == 'post-new.php') {
+				wp_enqueue_script ('geopress-ajax-script', GEOPRESS_URL . 'js/geopress-ajax.js');
+				//wp_enqueue_script ('geopress-ajax-script', GEOPRESS_URL . 'js/geopress-ajax.min.js');
+				wp_localize_script ('geopress-ajax-script', 'GeoPressAjax', array ('ajaxurl' => admin_url ('admin-ajax.php')));
+			}
 		}
 
 		/**
@@ -658,6 +889,8 @@ if (!class_exists ('GeoPress')) {
 
 		function admin_print_styles () {
 			global $pagenow;
+			
+			$enqueue_css = false;
 
 			if ($pagenow == 'options-general.php' &&
 					isset ($_GET['page']) &&
@@ -665,6 +898,14 @@ if (!class_exists ('GeoPress')) {
 				wp_enqueue_style ('dashboard');
 				wp_enqueue_style ('global');
 				wp_enqueue_style ('wp-admin');
+				$enqueue_css = true;
+			}
+
+			elseif ($pagenow == 'post.php' || $pagenow == 'post-new.php') {
+				$enqueue_css = true;
+			}
+			
+			if ($enqueue_css) {
 				//wp_enqueue_style ('geopress-admin', GEOPRESS_URL . 'css/geopress-admin.min.css');	
 				wp_enqueue_style ('geopress-admin', GEOPRESS_URL . 'css/geopress-admin.css');	
 			}
@@ -683,6 +924,11 @@ if (!class_exists ('GeoPress')) {
 					array ($this, 'admin_display_settings'));
 			}
 		}
+
+		// REWRITE HINTS
+		// v2.4.3 functions geopress_options_page, geopress_locations_page, geopress_maps_page
+		// and geopress_documentation_page are now superceded by admin_display_settings and
+		// admin_save_settings.
 
 		/**
 		 * add_options_page() callback function; called to emit the plugin's settings/options
@@ -736,7 +982,7 @@ if (!class_exists ('GeoPress')) {
 					$locn_settings[] = '</tfoot>';
 					$locn_settings[] = '<tbody>';
 					
-					$locations = $this->get_saved_locations ();
+					$locations = $this->get_all_geotags ();
 					
 					$locn_settings[] = '</tbody>';
 					$locn_settings[] = '</table>';
@@ -745,8 +991,9 @@ if (!class_exists ('GeoPress')) {
 					break;
 					
 				case 'geocoding':
+					$geo_settings[] = '';
 					$geo_settings[] = '<p><strong>' . __('Geocoders', 'geopress') . '</strong><br />
-					<select name="geopress-geocoder-type" id="geopress-geocoder-type">';
+						<select name="geopress_geocoder_type" id="geopress-geocoder-type">';
 					foreach (self::$geocoders as $id => $chars) {
 						$geo_settings[] = '<option value="' . $id . '"' . selected ($settings['geocoder'], $id, false) . '>' . $chars['name'] . '</option>';
 					}	// end-foreach
@@ -763,14 +1010,19 @@ if (!class_exists ('GeoPress')) {
 						<small>' . __('Enter your CloudMade API key', 'geopress') . '</small></p>';
 
 					$googlev3_geo[] = '<p><em>'
-						. __('You\'ve selected Google\'s geocoder; that\'s all there is. No settings, no API key, no options.', 'geopress')
+						. __('You\'ve selected Google\'s geocoder; to use this you\'ll need an API key; you can get one from the <a href="https://code.google.com/apis/console/" target="_blank">Google Code APIs Console</a>.', 'geopress')
 						. '</em></p>';
+					$googlev3_geo[] = '<p><strong>' . __("Google Maps API Key", 'geopress') . '</strong><br />
+						<input type="text" name="geopress_google_key" id="geopress-google-key" size="40" value="'
+						. $settings["google_key"]
+						. '" /><br />
+						<small>' . __('Enter your Google Maps API key', 'geopress') . '</small></p>';
 
 					$microsoft7_geo[] = '<p><em>'
 						. __('You\'ve selected Bing\'s geocoder; to use this you\'ll need an API key; you can get one from the <a href="http://www.bingmapsportal.com/" target="_blank">Bing Maps Account Center</a>.', 'geopress')
 						. '</em></p>';
 					$microsoft7_geo[] = '<p><strong>' . __("Bing API Key", 'geopress') . '</strong><br />
-						<input type="text" name="geopress_bing_key" id="geopress-binf-key" size="40" value="'
+						<input type="text" name="geopress_bing_key" id="geopress-bing-key" size="40" value="'
 						. $settings["microsoft7_key"]
 						. '" /><br />
 						<small>' . __('Enter your Bing API key', 'geopress') . '</small></p>';
@@ -779,10 +1031,10 @@ if (!class_exists ('GeoPress')) {
 						. __('You\'ve selected Yahoo\'s geocoder; to use this you\'ll need an API key; you can get one from the <a href="https://developer.apps.yahoo.com/dashboard/createKey.html" target="_blank">Yahoo! Developer Network</a>.', 'geopress')
 						. '</em></p>';
 					$yahoo_geo[] = '<p><strong>' . __("Yahoo API Key", 'geopress') . '</strong><br />
-						<input type="text" name="geopress_bing_key" id="geopress-binf-key" size="40" value="'
-						. $settings["microsoft7_key"]
+						<input type="text" name="geopress_yahoo_key" id="geopress-yahoo-key" size="40" value="'
+						. $settings["yahoo_key"]
 						. '" /><br />
-						<small>' . __('Enter your Bing API key', 'geopress') . '</small></p>';
+						<small>' . __('Enter your Yahoo API key', 'geopress') . '</small></p>';
 					break;
 					
 				case 'feeds':
@@ -1004,6 +1256,15 @@ if (!class_exists ('GeoPress')) {
 					$wrapped_content[] = $this->admin_postbox ('geopress-geocoding-settings',
 						__('Geocoding Settings', 'geopress'),
 						implode ('', $geo_settings));
+						
+					$current_geocoder = $settings['geocoder'];
+					foreach (self::$geocoders as $geocoder => $chars) {
+						$id = 'geopress-' . $geocoder . '-geocoder-settings';
+						$title = $chars['name'] . ' Geocoder Settings';
+						$hidden = ($current_geocoder != $geocoder);
+						$block = $geocoder . '_geo';
+						$wrapped_content[] = $this->admin_postbox ($id, $title, implode ('', $$block), $hidden);
+					}	// end-foreach
 					break;
 
 				case 'feeds':
@@ -1086,6 +1347,14 @@ if (!class_exists ('GeoPress')) {
 					switch ($tab) {
 						case 'locations':
 							$update_options = false;
+							break;
+							
+						case 'geocoding':
+							$settings['geocoder'] = $this->admin_option ('geopress_geocoder_type');
+							$settings['cloudmade_key'] = $this->admin_option ('geopress_cloudmade_key');
+							$settings['google_key'] = $this->admin_option ('geopress_google_key');
+							$settings['microsoft7_key'] = $this->admin_option ('geopress_bing_key');
+							$settings['yahoo_key'] = $this->admin_option ('geopress_yahoo_key');
 							break;
 							
 						case 'feeds':
@@ -1344,7 +1613,7 @@ if (!class_exists ('GeoPress')) {
 			}	// end-switch ($tab)
 		}
 
-		// MIGRATION HINTS
+		// REWRITE HINTS
 		// v3.0+ - admin_add_meta_boxes, admin_display_meta_box
 		// v2.4.3 - location_edit_form, geopress_new_location_form
 		//
@@ -1376,37 +1645,54 @@ if (!class_exists ('GeoPress')) {
 		function admin_display_meta_box ($post) {
 			error_log ('admin_display_meta_box++');
 
-			$locations = $this->get_location_by_post_id ($post->ID);
+			$details = "";
+			$coords = "";
+			$latlon = array ("", "");
+			$display_coords = "";
+			$name = "";
 
-			$content = array ();
+			$geotag = $this->get_geotag_by_post_id ($post->ID);
+			if (isset ($geotag) && !empty ($geotag)) {
+				$details = $geotag->loc;
+				$coords = $geotag->coord;
+				$latlon = explode (' ', $coords);
+				$display_coords = $latlon[0] . ', ' . $latlon[1];
+				$name = $geotag->name;
+			}
 			
+			$content = array ();
 			$content[] = wp_nonce_field (basename (__FILE__), self::META_NONCE);
 			
-			$locn_settings[] = '<table class="widefat">';
-			$locn_settings[] = '<thead>';
-			$locn_settings[] = '<tr>';
-			$locn_settings[] = '<th>' . __('Show', 'geopress') . '</th>';
-			$locn_settings[] = '<th>' . __('Name', 'geopress') . '</th>';
-			$locn_settings[] = '<th>' . __('Address', 'geopress') . '</th>';
-			$locn_settings[] = '<th>' . __('Geometry', 'geopress') . '</th>';
-			$locn_settings[] = '</tr>';
-			$locn_settings[] = '</thead>';
-			$locn_settings[] = '<tfoot>';
-			$locn_settings[] = '<tr>';
-			$locn_settings[] = '<th>' . __('Show', 'geopress') . '</th>';
-			$locn_settings[] = '<th>' . __('Name', 'geopress') . '</th>';
-			$locn_settings[] = '<th>' . __('Address', 'geopress') . '</th>';
-			$locn_settings[] = '<th>' . __('Geometry', 'geopress') . '</th>';
-			$locn_settings[] = '</tr>';
-			$locn_settings[] = '</tfoot>';
-			$locn_settings[] = '<tbody>';
-			
-			$locations = $this->get_saved_locations ();
-			
-			$locn_settings[] = '</tbody>';
-			$locn_settings[] = '</table>';
-			
+			$content[] = '<p><strong>' . __('Geotag Name', 'geopress') . '</strong><br />
+				<input type="text" name="geopress_location_name" id="geopress-location-name" value="' . $name . '" /><br />
+				<small>' . __('Geotag name', 'geopress') . '</small></p>';
 
+			$content[] = '<p><strong>' . __('Geotag Details; Name, Address, Coordinates', 'geopress') . '</strong><br />
+				<input type="text" name="geopress_location_details" id="geopress-location-details" value="' . $details . '" /><br />
+				<small>' . __('Geotag details', 'geopress') . '</small></p>';
+				
+			$content[] = '<p><strong>' . __('Geotag Coordinates', 'geopress') . '</strong><br />
+				<input type="text" name="geopress_location_coords" id="geopress-location-coords" readonly="readonly" value="' . $display_coords . '" /><br />
+				<small>' . __('Geotag Coordinates', 'geopress') . '</small></p>';
+
+			$content[] = '<a class="button-secondary" name="geopress_location_geocode" id="geopress-location-geocode">' . __('Geocode', 'geopress') . '</a>';
+
+			$content[] = '<p><strong>' . __('Choose An Existing Geotag', 'geopress') . '</strong><br />
+				<select name="geopress_existing_geotags" id="geopress-existing-geotags">
+				<option value="">' . __('-- Geotag --', 'geopress') . '</option>';
+			$geotags = $this->get_all_geotags ();
+			foreach ($geotags as $tag) {
+				$content[] = '<option value="' . $tag->loc . '>"' . $tag->name . '</option>';
+			}	// end-foreach
+			$content[] = '</select><br />';
+			
+			$content[] = '<input type="hidden" name="geopress_location_lat" id="geopress-location-lat" value="' . $latlon[0] . '"/><br />';
+			$content[] = '<input type="hidden" name="geopress_location_lon" id="geopress-location-lon" value="' . $latlon[1] . '"/><br />';
+
+
+			$content[] = '<p class="geopress-error" id="geopress-geocode-failure"></p>';
+			$content[] = '<p class="geopress-success" id="geopress-geocode-success">The geocoder seems to like your geotag details.</p>';
+			
 			echo implode (PHP_EOL, $content);
 		}
 		
@@ -1465,6 +1751,32 @@ if (!class_exists ('GeoPress')) {
 			}
 			
 			// We're good to go ...
+
+			$name_field = 'geopress_location_name';
+			$details_field = 'geopress_location_details';
+			$lon_field = 'geopress_location_lon';
+			$lat_field = 'geopress_location_lat';
+			
+			$new_name = $this->admin_option ($name_field);
+			$new_details = $this->admin_option ($details_field);
+			$new_lat = $this->admin_option ($lat_field);
+			$new_lon = $this->admin_option ($lon_field);
+			$new_coords = '';
+			
+			if (isset ($new_lat) && !empty ($new_lat) && isset ($new_lon) && !empty ($new_lon)) {
+				$new_coords = $new_lat . ' ' . $new_lon;
+			}
+			
+			$geopress_id = $this->save_geotag (-1, $new_name, $new_details, $new_coords, self::DEFAULT_GEOMETRY);
+			$meta_id = get_post_meta ($post_id, self::ID_META_KEY, true);
+			
+			if ($geopress_id && '' == $meta_id) {
+				add_post_meta ($post_id, self::ID_META_KEY, $geopress_id, true);
+			}
+			
+			elseif ($geopress_id && $geopress_id != $meta_id) {
+				update_post_meta ($post_id, self::ID_META_KEY, $geopress_id, true);
+			}
 		}
 		
 	} // end-class GeoPress

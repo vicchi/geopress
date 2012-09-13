@@ -15,8 +15,9 @@ define ('GEOPRESS_URL', plugin_dir_url (__FILE__));
 define ('GEOPRESS_DEFAULT_MARKER', GEOPRESS_URL . 'images/flag.png');
 define ('GEOPRESS_TABLE_NAME', 'geopress');
 
-require_once (GEOPRESS_PATH . '/includes/wp-plugin-base/wp-plugin-base.php');
-require_once (GEOPRESS_PATH . '/includes/wp-mxn-helper/wp-mxn-helper.php');
+require_once (GEOPRESS_PATH . 'includes/wp-plugin-base/wp-plugin-base.php');
+require_once (GEOPRESS_PATH . 'includes/wp-mxn-helper/wp-mxn-helper.php');
+require_once (GEOPRESS_PATH . 'includes/geopress-geotags.php');
 
 if ($pagenow == 'admin-ajax.php') {
 	require_once (GEOPRESS_PATH . '/includes/geopress-geocoder.php');
@@ -448,13 +449,10 @@ if (!class_exists ('GeoPress')) {
 		// get_geo is now superseded by get_geotag_by_post_id
 
 		function get_geotag_by_post_id ($post_id) {
-			error_log ('get_geotag_by_post_id++');
-			error_log ('post_id: ' . $post_id);
  			global $wpdb;
 			$table = $wpdb->prefix . GEOPRESS_TABLE_NAME;
 
 			$geopress_id = get_post_meta ($post_id, self::ID_META_KEY, true);
-			error_log ('geopress_id: ' . $geopress_id);
 			if ($geopress_id) {
 				$sql = array ();
 
@@ -463,7 +461,6 @@ if (!class_exists ('GeoPress')) {
 			    $sql[] = " WHERE $wpdb->postmeta.meta_key = '" . self::ID_META_KEY . "'";
 			    $sql[] = " AND $wpdb->postmeta.meta_value = $table.geopress_id";
 			    $sql[] = " AND $wpdb->postmeta.post_id = $post_id AND $table.geopress_id = $geopress_id;";
-				error_log ('sql: ' . implode ('', $sql));
 			    $res = $wpdb->get_results (implode ('', $sql));
 				if ($res) {
 			    	return $res[0];
@@ -500,7 +497,6 @@ if (!class_exists ('GeoPress')) {
 				$sql .= " WHERE visible = 1";
 			}
 			$result = $wpdb->get_results ($sql);
-			
 			return $result;
 		}
 		
@@ -509,12 +505,6 @@ if (!class_exists ('GeoPress')) {
 		// save_geo is now superceded by save_geotag
 
 		function save_geotag ($id, $name, $location, $coord, $geometry, $visible=true) {
-			error_log ('save_geotag++');
-			error_log ('id: ' . $id);
-			error_log ('name: ' . $name);
-			error_log ('location: ' . $location);
-			error_log ('coord: ' . $coord);
-			error_log ('geometry: ' . $geometry);
 			if (!isset ($name) || empty ($name)) {
 				$visible = false;
 			}
@@ -566,21 +556,12 @@ if (!class_exists ('GeoPress')) {
  	 	 */
 
 		function admin_ajax_geocode () {
-			error_log ('admin_ajax_geocode++');
 			$query = $_POST['geocodeAddress'];
 			$geocoder = GeoPressGeocoder::get_instance ();
 			$provider = $this->get_option ('geocoder');
 			$chars = self::$geocoders[$provider];
 			$key = $this->get_option ($chars['config']);
-			error_log ('provider: ' . $provider);
-			error_log ('query: ' . $query);
-			error_log ('key: ' . $key);
-			error_log ('Invoking geocoder ...');
 			$ret = $geocoder->geocode ($provider, $query, $key);
-			error_log ('Status: ' . $ret['status']);
-			error_log ('HTTP Code: ' . $ret['http-code']);
-			error_log ('Service Code: ' . $ret['service-code']);
-			error_log ('Lat/Lon: ' . $ret['lat'] . ',' . $ret['lon']);
 			$resp = json_encode ($ret);
 			header ('Content-Type: application/json');
 			echo $resp;
@@ -963,7 +944,13 @@ if (!class_exists ('GeoPress')) {
 			
 			switch ($tab) {
 				case 'locations':
-					$locn_settings[] = '<table class="widefat">';
+					$geotags = new GeoPressGeotags ();
+					$geotags->prepare_items ();
+					ob_start ();
+					$geotags->display ();
+					$locn_settings[] = ob_get_clean ();
+					
+					/*$locn_settings[] = '<table class="widefat">';
 					$locn_settings[] = '<thead>';
 					$locn_settings[] = '<tr>';
 					$locn_settings[] = '<th>' . __('Show', 'geopress') . '</th>';
@@ -987,7 +974,7 @@ if (!class_exists ('GeoPress')) {
 					$locn_settings[] = '</tbody>';
 					$locn_settings[] = '</table>';
 					
-					$this->map_saved_locations ($locations);
+					$this->map_saved_locations ($locations);*/
 					break;
 					
 				case 'geocoding':
@@ -1626,7 +1613,6 @@ if (!class_exists ('GeoPress')) {
 		 */
 		
 		function admin_add_meta_boxes () {
-			error_log ('admin_add_meta_boxes++');
 			// Get all currently defined post types (post/custom post/page) ...
 			$pts = get_post_types (array (), 'objects');
 			
@@ -1643,8 +1629,6 @@ if (!class_exists ('GeoPress')) {
 		 */
 		
 		function admin_display_meta_box ($post) {
-			error_log ('admin_display_meta_box++');
-
 			$details = "";
 			$coords = "";
 			$latlon = array ("", "");
@@ -1682,7 +1666,7 @@ if (!class_exists ('GeoPress')) {
 				<option value="">' . __('-- Geotag --', 'geopress') . '</option>';
 			$geotags = $this->get_all_geotags ();
 			foreach ($geotags as $tag) {
-				$content[] = '<option value="' . $tag->loc . '>"' . $tag->name . '</option>';
+				$content[] = '<option value="' . $tag->geopress_id . '">' . $tag->name . '</option>';
 			}	// end-foreach
 			$content[] = '</select><br />';
 			
@@ -1702,8 +1686,6 @@ if (!class_exists ('GeoPress')) {
 		 */
 		
 		function admin_save_meta_boxes ($post_id, $post) {
-			error_log ('admin_save_meta_boxes++');
-			
 			// CODE HEALTH WARNING!
 			//
 			// The "save_post" hook is a bit of a misnomer and isn't particularly well named.

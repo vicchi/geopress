@@ -7,7 +7,6 @@ if (!class_exists ('GeoPressGeocoder')) {
 		private static $providers;
 		
 		const BING_URL = 'http://dev.virtualearth.net/REST/v1/Locations?query=%1$s&key=%2$s';
-		const YAHOO_URL = 'http://where.yahooapis.com/geocode?q=%1$s&flags=J&appid=%2$s';
 		const CLOUDMADE_URL = 'http://geocoding.cloudmade.com/%1$s/geocoding/v2/find.js?query=%2$s';
 		const GOOGLE_URL = 'http://maps.googleapis.com/maps/api/geocode/json?address=%s&sensor=false';
 
@@ -28,10 +27,6 @@ if (!class_exists ('GeoPressGeocoder')) {
 				'googlev3' => array (
 					'handler' => 'googlev3_geocode',
 					'has_key' => false
-				),
-				'yahoo' => array (
-					'handler' => 'yahoo_geocode',
-					'has_key' => true
 				)
 			);
 		}
@@ -108,39 +103,6 @@ if (!class_exists ('GeoPressGeocoder')) {
 				'lon' => $lon);
 		}
 		
-		private function yahoo_geocode ($query, $key) {
-			$status = 'failed';
-			$http_code = '';
-			$service_code = '';
-			$lat = '';
-			$lon = '';
-			$url = sprintf (self::YAHOO_URL, $query, $key);
-			
-			$res = wp_remote_get ($url);
-			if (isset ($res) && !empty ($res) && !is_wp_error ($res)) {
-				$http_code = $res['response']['code'];
-
-				if ($http_code == '200') {
-					$json = json_decode ($res['body']);
-					$service_code = $json->ResultSet->Error;
-
-					if ($service_code == '0') {
-						$status = 'ok';
-						$result = $json->ResultSet->Results[0];
-						$lat = $result->latitude;
-						$lon = $result->longitude;
-					}
-				}
-			}
-			
-			return array (
-				'status' => $status,
-				'http-code' => $http_code,
-				'service-code' => $service_code,
-				'lat' => $lat,
-				'lon' => $lon);
-		}
-
 		private function googlev3_geocode ($query, $key) {
 			$status = 'failed';
 			$http_code = '';

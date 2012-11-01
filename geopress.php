@@ -115,10 +115,6 @@ if (!class_exists ('GeoPress')) {
 				'googlev3' => array (
 					'name' => 'Google Maps v3',
 					'config' => 'google_key'
-					),
-				'yahoo' => array (
-					'name' => 'Yahoo! Placefinder',
-					'config' => 'yahoo_key'
 					)
 				);
 				
@@ -236,8 +232,7 @@ if (!class_exists ('GeoPress')) {
 						'google_key' => '',
 						'cloudmade_key' => '',
 						'microsoft7_key' => '',
-						'yahoo_key' => '',
-						'geocoder' => 'yahoo'
+						'geocoder' => 'cloudmade'
 					)
 				);
 				update_option (self::OPTIONS, $settings);
@@ -753,14 +748,13 @@ if (!class_exists ('GeoPress')) {
 						$this->admin_migrate_option ($settings, 'default_add_map', 'default_add_map');
 						$this->admin_migrate_option ($settings, 'default_zoom_level', 'default_zoom_level');
 						$this->admin_migrate_option ($settings, 'google_apikey', 'google_key');
-						$this->admin_migrate_option ($settings, 'yahoo_appid', 'yahoo_key');
 						
 					case '300':
 						$this->admin_upgrade_option ($settings, 'nokia_app_id', '');
 						$this->admin_upgrade_option ($settings, 'nokia_app_token', '');
 						$this->admin_upgrade_option ($settings, 'cloudmade_key', '');
 						$this->admin_upgrade_option ($settings, 'microsoft7_key', '');
-						$this->admin_upgrade_option ($settings, 'geocoder', 'yahoo');
+						$this->admin_upgrade_option ($settings, 'geocoder', 'cloudmade');
 
 						$settings['version'] = self::VERSION;
 						$upgrade_settings = true;
@@ -925,7 +919,6 @@ if (!class_exists ('GeoPress')) {
 			$microsoft7_geo = array ();
 			$cloudmade_geo = array ();
 			$googlev3_geo = array ();
-			$yahoo_geo = array ();
 			$maps_settings = array ();
 			$nokia_maps = array ();
 			$googlev3_maps = array ();
@@ -1014,15 +1007,6 @@ if (!class_exists ('GeoPress')) {
 						. $settings["microsoft7_key"]
 						. '" /><br />
 						<small>' . __('Enter your Bing API key', 'geopress') . '</small></p>';
-
-					$yahoo_geo[] = '<p><em>'
-						. __('You\'ve selected Yahoo\'s geocoder; to use this you\'ll need an API key; you can get one from the <a href="https://developer.apps.yahoo.com/dashboard/createKey.html" target="_blank">Yahoo! Developer Network</a>.', 'geopress')
-						. '</em></p>';
-					$yahoo_geo[] = '<p><strong>' . __("Yahoo API Key", 'geopress') . '</strong><br />
-						<input type="text" name="geopress_yahoo_key" id="geopress-yahoo-key" size="40" value="'
-						. $settings["yahoo_key"]
-						. '" /><br />
-						<small>' . __('Enter your Yahoo API key', 'geopress') . '</small></p>';
 					break;
 					
 				case 'feeds':
@@ -1342,7 +1326,6 @@ if (!class_exists ('GeoPress')) {
 							$settings['cloudmade_key'] = $this->admin_option ('geopress_cloudmade_key');
 							$settings['google_key'] = $this->admin_option ('geopress_google_key');
 							$settings['microsoft7_key'] = $this->admin_option ('geopress_bing_key');
-							$settings['yahoo_key'] = $this->admin_option ('geopress_yahoo_key');
 							break;
 							
 						case 'feeds':

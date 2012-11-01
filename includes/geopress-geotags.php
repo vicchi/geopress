@@ -16,18 +16,37 @@ if (!class_exists ('GeoPressGeotags')) {
 		
 		function get_columns () {
 			return $columns = array (
-				'visible' => __('Visible'),
+				'visible' => __('Show'),
 				'name' => __('Name'),
-				'loc' => __('Details'),
-				'coord' => __('Coordinates')
+				'loc' => __('Details')
 			);
 		}
 		
 		function get_sortable_columns () {
 			return $sortable = array (
-				'visible' => 'visible',
-				'name' => 'name'
+				'visible' => array ('visible', false),
+				'name' => array ('name', false)
 			);
+		}
+
+		function column_default ($item, $column_name) {
+			switch ($column_name) {
+				case 'visible':
+				case 'name':
+				case 'loc':
+					return $item[$column_name];
+					break;
+				default:
+					break;
+			}	// end-switch
+		}
+		function column_name ($item) {
+			$actions = array (
+				'edit' => '<a class="geopress-edit-geotag">Edit</a>',
+				'delete' => '<a class="geopress-delete-geotag">Delete</a>'
+			);
+			
+			return sprintf ('%1$s %2$s', $item['name'], $this->row_actions ($actions));
 		}
 		
 		// TODO : need to merge the code in prepare_items() into GeoPress::get_all_geotags()
@@ -84,7 +103,10 @@ if (!class_exists ('GeoPressGeotags')) {
 			
 			if (!empty ($records)) {
 				foreach ($records as $rec) {
-					echo '<tr id="record_' . $rec->geopress_id . '">';
+					$class = 'geopress-list-' . $rec->geopress_id;
+					$id = 'geopress-list-' . $rec->geopress_id;
+					
+					echo '<tr id="' . $id . '" class="' . $class . '">';
 					foreach ($columns as $column_name => $display_name) {
 						$class = "class='$column_name column-$column_name'";
 						$style = '';
@@ -96,7 +118,7 @@ if (!class_exists ('GeoPressGeotags')) {
 						
 						switch ($column_name) {
 							case 'visible':
-								echo '<td ' . $attributes . '>' . ($rec->visible ? 'yes' : 'no') . '</td>';
+								echo '<td ' . $attributes . '><input type="checkbox" disabled="disabled" ' . checked ($rec->visible, true, false) . ' /></td>';
 								break;
 							case 'name':
 								echo '<td ' . $attributes . '>' . $rec->name . '</td>';
@@ -104,9 +126,6 @@ if (!class_exists ('GeoPressGeotags')) {
 							case 'loc':
 								echo '<td ' . $attributes . '>' . $rec->loc . '</td>';
 								break;
-							case 'coord':
-								echo '<td ' . $attributes . '>' . $rec->coord . '</td>';
-							 	break;
 						}	// end-switch (...)
 					}	// end-foreach
 					echo '</tr>';

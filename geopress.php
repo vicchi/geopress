@@ -19,12 +19,13 @@ require_once (GEOPRESS_PATH . 'includes/wp-plugin-base/wp-plugin-base.php');
 require_once (GEOPRESS_PATH . 'includes/wp-mxn-helper/wp-mxn-helper.php');
 require_once (GEOPRESS_PATH . 'includes/geopress-geotags.php');
 
+global $pagenow;
 if ($pagenow == 'admin-ajax.php') {
 	require_once (GEOPRESS_PATH . '/includes/geopress-geocoder.php');
 }
 
 if (!class_exists ('GeoPress')) {
-	class GeoPress extends WP_PluginBase {
+	class GeoPress extends WP_PluginBase_v1_1 {
 		private static $instance;
 		
 		private $mxn;
@@ -48,7 +49,7 @@ if (!class_exists ('GeoPress')) {
 		 */
 		
 		private function __construct () {
-			$this->mxn = new WP_MXNHelper;
+			$this->mxn = new WP_MXNHelper_v2_0;
 			$this->mxn->register_callback ('cloudmade', array ($this, 'cloudmade_auth_callback'));
 			$this->mxn->register_callback ('nokia', array ($this, 'nokia_auth_callback'));
 			$this->mxn->register_callback ('googlev3', array ($this, 'googlev3_auth_callback'));

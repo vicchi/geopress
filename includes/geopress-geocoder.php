@@ -143,7 +143,6 @@ if (!class_exists ('GeoPressGeocoder')) {
 			$lat = '';
 			$lon = '';
 			$url = sprintf (self::CLOUDMADE_URL, $key, $query);
-			
 			$res = wp_remote_get ($url);
 			if (isset ($res) && !empty ($res) && !is_wp_error ($res)) {
 				$http_code = $res['response']['code'];
@@ -152,7 +151,7 @@ if (!class_exists ('GeoPressGeocoder')) {
 					$json = json_decode ($res['body']);
 					$service_code = $json->found;
 
-					if ($service_code == '1') {
+					if ((int) $service_code >= 1) {
 						$status = 'ok';
 						$features = $json->features[0];
 						$lat = $features->centroid->coordinates[0];
